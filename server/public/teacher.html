@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SMS Quest — Teacher Dashboard</title>
+<style>
+  :root {
+    --bg: #14161c;
+    --panel: #1e212b;
+    --panel-2: #262a37;
+    --border: #383e4f;
+    --text: #e8e9ee;
+    --muted: #9aa0b0;
+    --accent: #6ea8fe;
+    --accent-2: #ffcc66;
+    --danger: #ff6b6b;
+    --ok: #6fd08c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header .who { color: var(--muted); font-size: 13px; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .hidden { display: none !important; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 { margin-top: 0; font-size: 16px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input, select, textarea {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  textarea { width: 100%; min-height: 60px; resize: vertical; }
+  button {
+    background: var(--accent);
+    color: #0c1220;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+  button.danger { background: var(--danger); color: #2a0a0a; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  a.link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+  .list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    gap: 10px;
+  }
+  .list-item:last-child { border-bottom: none; }
+  .list-item .meta { color: var(--muted); font-size: 13px; }
+  .join-code {
+    font-family: monospace;
+    font-size: 22px;
+    letter-spacing: 3px;
+    color: var(--accent-2);
+    background: var(--panel-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    display: inline-block;
+  }
+  .error { color: var(--danger); font-size: 13px; margin-top: 8px; white-space: pre-line; }
+  .ok-msg { color: var(--ok); font-size: 13px; margin-top: 8px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tabs button { background: var(--panel-2); color: var(--muted); }
+  .tabs button.active { background: var(--accent); color: #0c1220; }
+  .question-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .question-row .prompt { font-weight: 600; margin-bottom: 6px; }
+  .answer-inputs { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center; margin: 10px 0; }
+  label.small { font-size: 12px; color: var(--muted); }
+  table.stats { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  table.stats th, table.stats td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  table.stats th { color: var(--muted); font-weight: 600; }
+  .accuracy-good { color: var(--ok); }
+  .accuracy-bad { color: var(--danger); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SMS Quest — Teacher Dashboard</h1>
+  <span class="who" id="whoami"></span>
+</header>
+
+<main>
+
+<!-- AUTH VIEW -->
+<section id="view-auth" class="card hidden">
+  <h2>Log in or create a teacher account</h2>
+  <div class="row">
+    <input id="auth-username" placeholder="Username" autocomplete="username">
+    <input id="auth-password" type="password" placeholder="Password" autocomplete="current-password">
+    <button id="btn-login">Log in</button>
+    <button class="secondary" id="btn-register">Create account</button>
+  </div>
+  <div class="error hidden" id="auth-error"></div>
+</section>
+
+<!-- DASHBOARD VIEW -->
+<section id="view-dashboard" class="hidden">
+
+  <div class="card">
+    <h2>Classes</h2>
+    <div id="class-list"></div>
+    <div class="row" style="margin-top:12px">
+      <input id="new-class-name" placeholder="New class name (e.g. Grade 6.6)">
+      <button id="btn-create-class">Create class</button>
+    </div>
+    <div class="error hidden" id="class-error"></div>
+  </div>
+
+  <div class="card">
+    <h2>Question sets</h2>
+    <div id="set-list"></div>
+    <div class="row" style="margin-top:12px">
+      <input id="new-set-title" placeholder="Title (e.g. Canadian Government)">
+      <input id="new-set-subject" placeholder="Subject" style="width:140px">
+      <input id="new-set-grade" placeholder="Grade" style="width:80px">
+      <button id="btn-create-set">Create set</button>
+    </div>
+    <div class="error hidden" id="set-error"></div>
+  </div>
+
+</section>
+
+<!-- CLASS DETAIL VIEW -->
+<section id="view-class" class="card hidden">
+  <a class="link" id="class-back">&larr; Back to dashboard</a>
+  <h2 id="class-detail-name"></h2>
+  <p>Students join with this code:</p>
+  <div class="join-code" id="class-detail-code"></div>
+
+  <div class="row" style="margin:10px 0">
+    <button class="secondary" id="btn-view-analytics">View analytics</button>
+  </div>
+
+  <h3>Roster</h3>
+  <div id="class-roster"><em>No students yet.</em></div>
+
+  <h3>Assigned question sets</h3>
+  <div id="class-assigned"></div>
+  <div class="row" style="margin-top:10px">
+    <select id="assign-set-select"></select>
+    <button id="btn-assign-set">Assign</button>
+  </div>
+</section>
+
+<!-- CLASS ANALYTICS VIEW -->
+<section id="view-analytics" class="card hidden">
+  <a class="link" id="analytics-back">&larr; Back to class</a>
+  <h2 id="analytics-class-name"></h2>
+  <p style="color:var(--muted); font-size:13px">
+    Game behaviour, not a formal assessment — a quick read on who's engaging and which
+    questions are landing, not a grade.
+  </p>
+
+  <h3>By student</h3>
+  <table class="stats" id="analytics-students-table">
+    <thead><tr><th>Student</th><th>Attempted</th><th>Correct</th><th>Accuracy</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h3>By question</h3>
+  <table class="stats" id="analytics-questions-table">
+    <thead><tr><th>Question</th><th>Topic</th><th>Attempts</th><th>% Correct</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<!-- STUDENT DETAIL VIEW -->
+<section id="view-student" class="card hidden">
+  <a class="link" id="student-back">&larr; Back</a>
+  <h2 id="student-detail-name"></h2>
+  <p id="student-overall" style="color:var(--muted); font-size:13px"></p>
+  <div id="student-sets"></div>
+</section>
+
+<!-- QUESTION SET EDITOR VIEW -->
+<section id="view-set" class="card hidden">
+  <a class="link" id="set-back">&larr; Back to dashboard</a>
+  <h2 id="set-detail-title"></h2>
+
+  <h3>Import from CSV</h3>
+  <p style="color:var(--muted); font-size:13px">
+    <a class="link" href="/question-set-template.csv" download>Download the template</a> —
+    fill it in (your own questions, or ones an AI wrote that you've already reviewed) and upload it below.
+    Columns: question_type (mc/tf), prompt, answer_1-4, correct_index (0-based), explanation,
+    difficulty (1-3), topic, tags (semicolon-separated). All-or-nothing — a bad row cancels the whole import.
+  </p>
+  <div class="row">
+    <input type="file" id="csv-file-input" accept=".csv">
+    <button id="btn-import-csv">Import</button>
+  </div>
+  <div class="error hidden" id="csv-error"></div>
+  <div class="ok-msg hidden" id="csv-success"></div>
+
+  <h3>Questions</h3>
+  <div id="question-list"></div>
+
+  <h3 id="question-form-heading">Add a question</h3>
+  <div class="row">
+    <label class="small">Type</label>
+    <select id="q-type">
+      <option value="mc">Multiple choice</option>
+      <option value="tf">True / False</option>
+    </select>
+  </div>
+  <textarea id="q-prompt" placeholder="Question prompt"></textarea>
+  <div id="q-answers"></div>
+  <div class="row">
+    <input id="q-explanation" placeholder="Explanation (shown after answering)" style="flex:1">
+  </div>
+  <div class="row" style="margin-top:8px">
+    <label class="small">Difficulty</label>
+    <select id="q-difficulty"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+    <label class="small">Topic</label>
+    <input id="q-topic" placeholder="Topic" style="width:160px">
+  </div>
+  <div class="row" style="margin-top:12px">
+    <button id="btn-save-question">Add question</button>
+    <button class="secondary hidden" id="btn-cancel-edit">Cancel edit</button>
+  </div>
+  <div class="error hidden" id="question-error"></div>
+</section>
+
+</main>
+
+<script>
+const API = "";
+let token = localStorage.getItem("teacher_token") || null;
+let username = localStorage.getItem("teacher_username") || null;
+let classesCache = [];
+let setsCache = [];
+let editingQuestionId = null;
+let currentSetId = null;
+let currentClassId = null;
+
+function show(id) {
+  ["view-auth", "view-dashboard", "view-class", "view-analytics", "view-student", "view-set"].forEach(v => {
+    document.getElementById(v).classList.toggle("hidden", v !== id);
+  });
+}
+
+async function api(method, path, body) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = "Bearer " + token;
+  const res = await fetch(API + path, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || ("Request failed (" + res.status + ")"));
+    if (data.row_errors) err.rowErrors = data.row_errors;
+    throw err;
+  }
+  return data;
+}
+
+function setError(elId, msg) {
+  const el = document.getElementById(elId);
+  el.textContent = msg;
+  el.classList.toggle("hidden", !msg);
+}
+
+// ---- auth ----
+document.getElementById("btn-login").onclick = () => doAuth("/api/teacher/login");
+document.getElementById("btn-register").onclick = () => doAuth("/api/teacher/register");
+
+async function doAuth(path) {
+  setError("auth-error", "");
+  const u = document.getElementById("auth-username").value.trim();
+  const p = document.getElementById("auth-password").value;
+  try {
+    const data = await api("POST", path, { username: u, password: p });
+    token = data.token;
+    username = data.username;
+    localStorage.setItem("teacher_token", token);
+    localStorage.setItem("teacher_username", username);
+    enterDashboard();
+  } catch (e) {
+    setError("auth-error", e.message);
+  }
+}
+
+function logout() {
+  token = null;
+  localStorage.removeItem("teacher_token");
+  localStorage.removeItem("teacher_username");
+  document.getElementById("whoami").textContent = "";
+  show("view-auth");
+}
+
+// ---- dashboard ----
+async function enterDashboard() {
+  document.getElementById("whoami").textContent = username + " · " +
+    '<a class="link" onclick="logout()">log out</a>'.replace(/<[^>]+>/g, m => m); // keep text simple below
+  document.getElementById("whoami").innerHTML = username + ' &middot; <a class="link" id="logout-link">log out</a>';
+  document.getElementById("logout-link").onclick = logout;
+  show("view-dashboard");
+  await Promise.all([refreshClasses(), refreshSets()]);
+}
+
+async function refreshClasses() {
+  const data = await api("GET", "/api/teacher/classes");
+  classesCache = data.classes;
+  const el = document.getElementById("class-list");
+  el.innerHTML = "";
+  if (classesCache.length === 0) el.innerHTML = "<em>No classes yet.</em>";
+  classesCache.forEach(c => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `<div><strong>${escapeHtml(c.name)}</strong>
+        <div class="meta">Code ${c.join_code} &middot; ${c.student_count} student${c.student_count === 1 ? "" : "s"}</div></div>`;
+    const btn = document.createElement("button");
+    btn.className = "secondary";
+    btn.textContent = "Manage";
+    btn.onclick = () => openClass(c.id);
+    row.appendChild(btn);
+    el.appendChild(row);
+  });
+}
+
+async function refreshSets() {
+  const data = await api("GET", "/api/teacher/question-sets");
+  setsCache = data.question_sets;
+  const el = document.getElementById("set-list");
+  el.innerHTML = "";
+  if (setsCache.length === 0) el.innerHTML = "<em>No question sets yet.</em>";
+  setsCache.forEach(s => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `<div><strong>${escapeHtml(s.title)}</strong>
+        <div class="meta">${escapeHtml(s.subject || "")} ${escapeHtml(s.grade ? "· Grade " + s.grade : "")} &middot; ${s.question_count} question${s.question_count === 1 ? "" : "s"}</div></div>`;
+    const editBtn = document.createElement("button");
+    editBtn.className = "secondary";
+    editBtn.textContent = "Edit";
+    editBtn.onclick = () => openSet(s.id);
+    const delBtn = document.createElement("button");
+    delBtn.className = "danger";
+    delBtn.textContent = "Delete";
+    delBtn.onclick = async () => {
+      if (!confirm(`Delete "${s.title}" and all its questions?`)) return;
+      await api("DELETE", "/api/teacher/question-sets/" + s.id);
+      refreshSets();
+    };
+    const wrap = document.createElement("div");
+    wrap.className = "row";
+    wrap.appendChild(editBtn);
+    wrap.appendChild(delBtn);
+    row.appendChild(wrap);
+    el.appendChild(row);
+  });
+}
+
+document.getElementById("btn-create-class").onclick = async () => {
+  setError("class-error", "");
+  const name = document.getElementById("new-class-name").value.trim();
+  if (!name) return setError("class-error", "Enter a class name");
+  try {
+    await api("POST", "/api/teacher/classes", { name });
+    document.getElementById("new-class-name").value = "";
+    refreshClasses();
+  } catch (e) { setError("class-error", e.message); }
+};
+
+document.getElementById("btn-create-set").onclick = async () => {
+  setError("set-error", "");
+  const title = document.getElementById("new-set-title").value.trim();
+  const subject = document.getElementById("new-set-subject").value.trim();
+  const grade = document.getElementById("new-set-grade").value.trim();
+  if (!title) return setError("set-error", "Enter a title");
+  try {
+    await api("POST", "/api/teacher/question-sets", { title, subject, grade });
+    document.getElementById("new-set-title").value = "";
+    document.getElementById("new-set-subject").value = "";
+    document.getElementById("new-set-grade").value = "";
+    refreshSets();
+  } catch (e) { setError("set-error", e.message); }
+};
+
+// ---- class detail ----
+document.getElementById("class-back").onclick = () => { show("view-dashboard"); refreshClasses(); };
+
+async function openClass(id) {
+  currentClassId = id;
+  const data = await api("GET", "/api/teacher/classes/" + id);
+  document.getElementById("class-detail-name").textContent = data.class.name;
+  document.getElementById("class-detail-code").textContent = data.class.join_code;
+
+  const rosterEl = document.getElementById("class-roster");
+  rosterEl.innerHTML = "";
+  if (data.roster.length === 0) rosterEl.innerHTML = "<em>No students yet.</em>";
+  data.roster.forEach(r => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `<div><a class="link">${escapeHtml(r.username)}</a></div>`;
+    row.querySelector("a").onclick = () => openStudent(id, r.student_id, "view-class");
+    rosterEl.appendChild(row);
+  });
+
+  const assignedEl = document.getElementById("class-assigned");
+  assignedEl.innerHTML = "";
+  if (data.assigned_sets.length === 0) assignedEl.innerHTML = "<em>No question sets assigned.</em>";
+  data.assigned_sets.forEach(s => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `<div>${escapeHtml(s.title)}</div>`;
+    const btn = document.createElement("button");
+    btn.className = "danger";
+    btn.textContent = "Unassign";
+    btn.onclick = async () => {
+      await api("DELETE", `/api/teacher/classes/${id}/assign/${s.id}`);
+      openClass(id);
+    };
+    row.appendChild(btn);
+    assignedEl.appendChild(row);
+  });
+
+  const assignedIds = new Set(data.assigned_sets.map(s => s.id));
+  const select = document.getElementById("assign-set-select");
+  select.innerHTML = "";
+  setsCache.filter(s => !assignedIds.has(s.id)).forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.title;
+    select.appendChild(opt);
+  });
+
+  document.getElementById("btn-assign-set").onclick = async () => {
+    if (!select.value) return;
+    await api("POST", `/api/teacher/classes/${id}/assign`, { question_set_id: Number(select.value) });
+    openClass(id);
+  };
+
+  show("view-class");
+}
+
+// ---- class analytics ----
+document.getElementById("btn-view-analytics").onclick = () => openClassAnalytics(currentClassId);
+document.getElementById("analytics-back").onclick = () => openClass(currentClassId);
+
+function pct(correct, attempts) {
+  if (attempts === 0) return "—";
+  return Math.round((correct / attempts) * 100) + "%";
+}
+
+function accuracyClass(correct, attempts) {
+  if (attempts === 0) return "";
+  const r = correct / attempts;
+  return r >= 0.7 ? "accuracy-good" : (r < 0.4 ? "accuracy-bad" : "");
+}
+
+async function openClassAnalytics(id) {
+  const data = await api("GET", `/api/teacher/classes/${id}/analytics`);
+  document.getElementById("analytics-class-name").textContent = data.class.name + " — Analytics";
+
+  const studentsBody = document.querySelector("#analytics-students-table tbody");
+  studentsBody.innerHTML = "";
+  if (data.students.length === 0) {
+    studentsBody.innerHTML = "<tr><td colspan='4'><em>No students yet.</em></td></tr>";
+  }
+  data.students.forEach(s => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><a class="link">${escapeHtml(s.username)}</a></td><td>${s.attempts}</td><td>${s.correct_count}</td>
+      <td class="${accuracyClass(s.correct_count, s.attempts)}">${pct(s.correct_count, s.attempts)}</td>`;
+    tr.querySelector("a").onclick = () => openStudent(id, s.student_id, "view-analytics");
+    studentsBody.appendChild(tr);
+  });
+
+  const questionsBody = document.querySelector("#analytics-questions-table tbody");
+  questionsBody.innerHTML = "";
+  if (data.questions.length === 0) {
+    questionsBody.innerHTML = "<tr><td colspan='4'><em>No questions assigned.</em></td></tr>";
+  }
+  data.questions.forEach(q => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(q.prompt)}</td><td>${escapeHtml(q.topic || "")}</td><td>${q.attempts}</td>
+      <td class="${accuracyClass(q.correct_count, q.attempts)}">${pct(q.correct_count, q.attempts)}</td>`;
+    questionsBody.appendChild(tr);
+  });
+
+  show("view-analytics");
+}
+
+// ---- student detail (drill-down from either the roster or the analytics table) ----
+let studentReturnView = "view-class";
+
+document.getElementById("student-back").onclick = () => {
+  if (studentReturnView === "view-analytics") openClassAnalytics(currentClassId);
+  else openClass(currentClassId);
+};
+
+async function openStudent(classId, studentId, returnView) {
+  studentReturnView = returnView;
+  const data = await api("GET", `/api/teacher/classes/${classId}/students/${studentId}`);
+
+  document.getElementById("student-detail-name").textContent = data.student.username;
+  document.getElementById("student-overall").textContent =
+    `${data.overall.correct_count} / ${data.overall.attempts} correct overall (${pct(data.overall.correct_count, data.overall.attempts)})`;
+
+  const el = document.getElementById("student-sets");
+  el.innerHTML = "";
+  if (data.question_sets.length === 0) {
+    el.innerHTML = "<em>No question sets assigned to this class yet.</em>";
+  }
+  data.question_sets.forEach(set => {
+    const wrap = document.createElement("div");
+    wrap.style.marginBottom = "20px";
+
+    const heading = document.createElement("h3");
+    heading.textContent = `${set.title} — ${set.correct_count} / ${set.attempts} (${pct(set.correct_count, set.attempts)})`;
+    wrap.appendChild(heading);
+
+    const table = document.createElement("table");
+    table.className = "stats";
+    table.innerHTML = "<thead><tr><th>Question</th><th>Topic</th><th>Attempts</th><th>% Correct</th></tr></thead><tbody></tbody>";
+    const tbody = table.querySelector("tbody");
+    if (set.questions.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='4'><em>No questions in this set.</em></td></tr>";
+    }
+    set.questions.forEach(q => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${escapeHtml(q.prompt)}</td><td>${escapeHtml(q.topic || "")}</td><td>${q.attempts}</td>
+        <td class="${accuracyClass(q.correct_count, q.attempts)}">${pct(q.correct_count, q.attempts)}</td>`;
+      tbody.appendChild(tr);
+    });
+    wrap.appendChild(table);
+    el.appendChild(wrap);
+  });
+
+  show("view-student");
+}
+
+// ---- question set editor ----
+document.getElementById("set-back").onclick = () => { show("view-dashboard"); refreshSets(); };
+
+document.getElementById("btn-import-csv").onclick = () => {
+  setError("csv-error", "");
+  document.getElementById("csv-success").classList.add("hidden");
+
+  const fileInput = document.getElementById("csv-file-input");
+  const file = fileInput.files[0];
+  if (!file) return setError("csv-error", "Choose a CSV file first");
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const data = await api("POST", `/api/teacher/question-sets/${currentSetId}/import-csv`, { csv: reader.result });
+      const successEl = document.getElementById("csv-success");
+      successEl.textContent = `Imported ${data.imported} question${data.imported === 1 ? "" : "s"}.`;
+      successEl.classList.remove("hidden");
+      fileInput.value = "";
+      openSet(currentSetId);
+    } catch (e) {
+      if (e.rowErrors) {
+        setError("csv-error", e.message + ":\n" + e.rowErrors.map(r => `Row ${r.row}: ${r.error}`).join("\n"));
+      } else {
+        setError("csv-error", e.message);
+      }
+    }
+  };
+  reader.onerror = () => setError("csv-error", "Could not read that file");
+  reader.readAsText(file);
+};
+
+function renderAnswerInputs(count, type) {
+  const el = document.getElementById("q-answers");
+  el.innerHTML = "";
+  const n = type === "tf" ? 2 : count;
+  const labels = type === "tf" ? ["True", "False"] : null;
+  for (let i = 0; i < n; i++) {
+    const wrap = document.createElement("div");
+    wrap.className = "answer-inputs";
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "correct";
+    radio.value = i;
+    radio.id = "correct-" + i;
+    const input = document.createElement("input");
+    input.id = "answer-" + i;
+    input.placeholder = "Answer " + (i + 1);
+    if (labels) { input.value = labels[i]; input.disabled = true; }
+    wrap.appendChild(radio);
+    wrap.appendChild(input);
+    el.appendChild(wrap);
+  }
+}
+
+document.getElementById("q-type").onchange = (e) => renderAnswerInputs(4, e.target.value);
+renderAnswerInputs(4, "mc");
+
+async function openSet(id) {
+  currentSetId = id;
+  resetQuestionForm();
+  const data = await api("GET", "/api/teacher/question-sets/" + id);
+  document.getElementById("set-detail-title").textContent = data.question_set.title;
+
+  const listEl = document.getElementById("question-list");
+  listEl.innerHTML = "";
+  if (data.questions.length === 0) listEl.innerHTML = "<em>No questions yet - add one below.</em>";
+  data.questions.forEach(q => {
+    const row = document.createElement("div");
+    row.className = "question-row";
+    row.innerHTML = `<div class="prompt">${escapeHtml(q.prompt)}</div>
+      <div class="meta">${q.answers.map((a, i) => (i === q.correct_index ? "✓ " : "") + escapeHtml(a)).join(" &nbsp;|&nbsp; ")}</div>`;
+    const btnRow = document.createElement("div");
+    btnRow.className = "row";
+    btnRow.style.marginTop = "8px";
+    const editBtn = document.createElement("button");
+    editBtn.className = "secondary";
+    editBtn.textContent = "Edit";
+    editBtn.onclick = () => loadQuestionIntoForm(q);
+    const delBtn = document.createElement("button");
+    delBtn.className = "danger";
+    delBtn.textContent = "Delete";
+    delBtn.onclick = async () => {
+      if (!confirm("Delete this question?")) return;
+      await api("DELETE", "/api/teacher/questions/" + q.id);
+      openSet(id);
+    };
+    btnRow.appendChild(editBtn);
+    btnRow.appendChild(delBtn);
+    row.appendChild(btnRow);
+    listEl.appendChild(row);
+  });
+
+  show("view-set");
+}
+
+function resetQuestionForm() {
+  editingQuestionId = null;
+  document.getElementById("question-form-heading").textContent = "Add a question";
+  document.getElementById("btn-save-question").textContent = "Add question";
+  document.getElementById("btn-cancel-edit").classList.add("hidden");
+  document.getElementById("q-type").value = "mc";
+  document.getElementById("q-prompt").value = "";
+  document.getElementById("q-explanation").value = "";
+  document.getElementById("q-difficulty").value = "1";
+  document.getElementById("q-topic").value = "";
+  renderAnswerInputs(4, "mc");
+  setError("question-error", "");
+}
+
+function loadQuestionIntoForm(q) {
+  editingQuestionId = q.id;
+  document.getElementById("question-form-heading").textContent = "Edit question";
+  document.getElementById("btn-save-question").textContent = "Save changes";
+  document.getElementById("btn-cancel-edit").classList.remove("hidden");
+  document.getElementById("q-type").value = q.question_type;
+  document.getElementById("q-prompt").value = q.prompt;
+  document.getElementById("q-explanation").value = q.explanation || "";
+  document.getElementById("q-difficulty").value = String(q.difficulty || 1);
+  document.getElementById("q-topic").value = q.topic || "";
+  renderAnswerInputs(q.answers.length, q.question_type);
+  q.answers.forEach((a, i) => {
+    const input = document.getElementById("answer-" + i);
+    if (input) input.value = a;
+  });
+  const radio = document.getElementById("correct-" + q.correct_index);
+  if (radio) radio.checked = true;
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+document.getElementById("btn-cancel-edit").onclick = resetQuestionForm;
+
+document.getElementById("btn-save-question").onclick = async () => {
+  setError("question-error", "");
+  const type = document.getElementById("q-type").value;
+  const prompt = document.getElementById("q-prompt").value.trim();
+  const n = type === "tf" ? 2 : 4;
+  const answers = [];
+  for (let i = 0; i < n; i++) answers.push(document.getElementById("answer-" + i).value.trim());
+  const correctRadio = document.querySelector('input[name="correct"]:checked');
+
+  if (!prompt) return setError("question-error", "Enter a prompt");
+  if (answers.some(a => !a)) return setError("question-error", "Fill in all answers");
+  if (!correctRadio) return setError("question-error", "Pick the correct answer");
+
+  const body = {
+    question_type: type,
+    prompt,
+    answers,
+    correct_index: Number(correctRadio.value),
+    explanation: document.getElementById("q-explanation").value.trim(),
+    difficulty: Number(document.getElementById("q-difficulty").value),
+    topic: document.getElementById("q-topic").value.trim(),
+    tags: [],
+  };
+
+  try {
+    if (editingQuestionId) {
+      await api("PUT", "/api/teacher/questions/" + editingQuestionId, body);
+    } else {
+      await api("POST", `/api/teacher/question-sets/${currentSetId}/questions`, body);
+    }
+    openSet(currentSetId);
+  } catch (e) {
+    setError("question-error", e.message);
+  }
+};
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ---- boot ----
+if (token) {
+  enterDashboard().catch(() => { logout(); });
+} else {
+  show("view-auth");
+}
+</script>
+</body>
+</html>

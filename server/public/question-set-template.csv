@@ -1,0 +1,4 @@
+question_type,prompt,answer_1,answer_2,answer_3,answer_4,correct_index,explanation,difficulty,topic,tags
+mc,What is the capital of Canada?,Toronto,Vancouver,Ottawa,Montreal,2,Ottawa is Canada's capital city.,1,Geography,canada;capitals
+tf,The Great Lakes are located in North America.,True,False,,,0,The Great Lakes border Canada and the United States.,1,Geography,lakes
+mc,What is 7 x 8?,54,56,58,64,1,7 x 8 = 56.,1,Math,multiplication
