@@ -135,7 +135,7 @@ export function attachMultiplayer(server: HttpServer) {
       if (msg.t === "pos") {
         const party = updatePosition(state.connId, Number(msg.x) || 0, Number(msg.y) || 0, Number(msg.facing) || 0);
         if (!party) return;
-        broadcastToParty(party, { t: "member_pos", id: state.connId, x: msg.x, y: msg.y, facing: msg.facing }, state.connId);
+        broadcastToParty(party, { t: "member_pos", id: state.connId, x: msg.x, y: msg.y, facing: msg.facing, drawing: !!msg.drawing, draw_t: Number(msg.draw_t) || 0 }, state.connId);
         return;
       }
 
