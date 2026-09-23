@@ -152,6 +152,30 @@ app.put("/api/character", requireAuth, ah(async (req: AuthedRequest, res) => {
   res.json({ ok: true });
 }));
 
+// Milestone 77: the in-game settings menu's "change password" - works for either account role
+// (requireAuth only, no requireRole), same as /api/character above, even though only the
+// student-facing game client uses it today.
+app.post("/api/change-password", requireAuth, ah(async (req: AuthedRequest, res) => {
+  const { current_password, new_password } = req.body ?? {};
+  if (typeof current_password !== "string" || typeof new_password !== "string") {
+    return res.status(400).json({ error: "current_password and new_password are required" });
+  }
+  if (new_password.length < 4) {
+    return res.status(400).json({ error: "New password must be at least 4 characters" });
+  }
+
+  const user = await dbGet<{ password_hash: string }>(
+    "SELECT password_hash FROM users WHERE id = ?",
+    [req.userId!]
+  );
+  if (!user || !bcrypt.compareSync(current_password, user.password_hash)) {
+    return res.status(401).json({ error: "Current password is incorrect" });
+  }
+
+  await dbRun("UPDATE users SET password_hash = ? WHERE id = ?", [bcrypt.hashSync(new_password, 10), req.userId!]);
+  res.json({ ok: true });
+}));
+
 app.post("/api/dungeon-runs", requireAuth, ah(async (req: AuthedRequest, res) => {
   const { dungeon_name, xp_gained } = req.body ?? {};
   if (typeof dungeon_name !== "string" || typeof xp_gained !== "number") {
