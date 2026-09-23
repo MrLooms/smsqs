@@ -19,5 +19,3 @@ services:
         fromDatabase:
           name: sms-quest-db
           property: connectionString
-      - key: NODE_ENV
-        value: production

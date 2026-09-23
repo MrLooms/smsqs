@@ -58,6 +58,7 @@ endpoints — a student token 403s on `/api/teacher/*`, a teacher token
 | POST | `/api/login` | - | `{username, password}` | 401 on bad credentials or a teacher account. |
 | GET | `/api/character` | yes | - | Current character snapshot. |
 | PUT | `/api/character` | yes | full character snapshot | Last-write-wins full replace, not a diff. |
+| POST | `/api/change-password` | yes | `{current_password, new_password}` | Works for either account role. 401 if `current_password` is wrong; new one needs 4+ chars. |
 | POST | `/api/dungeon-runs` | yes | `{dungeon_name, xp_gained}` | Insert-only log, nothing reads it back yet. |
 | POST | `/api/classes/join` | yes | `{join_code}` | Replaces any existing class membership - one class at a time. 404 on a bad code. |
 | POST | `/api/classes/leave` | yes | - | Clears the student's `class_members` row. `{ok: true}` whether or not they were in one. |
@@ -92,6 +93,8 @@ and `scr_items.gml` in sync by hand, there's no shared schema file yet.
 | PUT | `/api/teacher/questions/:id` | Same body shape. |
 | DELETE | `/api/teacher/questions/:id` | |
 | GET | `/api/teacher/classes/:id/analytics` | `{class, students: [{username, attempts, correct_count}], questions: [{id, prompt, topic, attempts, correct_count}]}` — students with zero attempts still appear (0/0), not omitted. |
+| GET | `/api/teacher/classes/:id/students/:studentId` | Per-student drill-down: `{student, overall, question_sets: [{id, title, attempts, correct_count, questions: [...]}]}`, scoped to sets assigned to the class. |
+| POST | `/api/teacher/classes/:id/students/:studentId/reset-password` | `{new_password}` (4+ chars) → `{ok: true}`. No old-password check - this IS the recovery path for a student who forgot theirs. Scoped to students in one of the teacher's own classes. |
 | POST | `/api/teacher/question-sets/:id/import-csv` | `{csv: "<raw file text>"}` → `{imported: N}`, or 400 with `{error, row_errors: [{row, error}]}` if any row is invalid — all-or-nothing, nothing partial ever lands. Template: `GET /question-set-template.csv` (static file). |
 
 A question's shape matches `scr_questions.gml`'s struct fields exactly, so

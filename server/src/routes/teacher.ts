@@ -229,6 +229,37 @@ router.get("/classes/:id/students/:studentId", ah(async (req: AuthedRequest, res
   });
 }));
 
+// Milestone 100: lets a teacher reset a student's password from the dashboard (a student
+// forgetting theirs has no other recovery path - no email on file, no self-serve "forgot
+// password" flow) - same class-ownership + membership scoping as the drill-down route above, so
+// a teacher can only reset passwords for students actually in one of their own classes, not any
+// account on the server. No old-password check needed here (unlike /api/change-password) - that
+// verification is the whole thing being bypassed.
+router.post("/classes/:id/students/:studentId/reset-password", ah(async (req: AuthedRequest, res) => {
+  const classId = Number(req.params.id);
+  const studentId = Number(req.params.studentId);
+  const { new_password } = req.body ?? {};
+
+  if (typeof new_password !== "string" || new_password.length < 4) {
+    return res.status(400).json({ error: "New password must be at least 4 characters" });
+  }
+
+  const cls = await dbGet<{ id: number }>(
+    "SELECT id FROM classes WHERE id = ? AND teacher_id = ?",
+    [classId, req.userId!]
+  );
+  if (!cls) return res.status(404).json({ error: "Class not found" });
+
+  const member = await dbGet(
+    "SELECT student_id FROM class_members WHERE class_id = ? AND student_id = ?",
+    [classId, studentId]
+  );
+  if (!member) return res.status(404).json({ error: "Student not found in this class" });
+
+  await dbRun("UPDATE users SET password_hash = ? WHERE id = ?", [bcrypt.hashSync(new_password, 10), studentId]);
+  res.json({ ok: true });
+}));
+
 router.post("/classes/:id/assign", ah(async (req: AuthedRequest, res) => {
   const classId = Number(req.params.id);
   const { question_set_id } = req.body ?? {};

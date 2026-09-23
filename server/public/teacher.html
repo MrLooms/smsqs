@@ -203,6 +203,18 @@
   <h2 id="student-detail-name"></h2>
   <p id="student-overall" style="color:var(--muted); font-size:13px"></p>
   <div id="student-sets"></div>
+
+  <h3>Reset Password</h3>
+  <p style="color:var(--muted); font-size:13px">
+    Sets this student's password directly - there's no email on file to send a reset link to,
+    so this IS the recovery path. Tell them the new password yourself afterward.
+  </p>
+  <div class="row">
+    <input id="reset-pw-input" type="text" placeholder="New password (4+ characters)">
+    <button class="danger" id="btn-reset-password">Reset Password</button>
+  </div>
+  <div class="error hidden" id="reset-pw-error"></div>
+  <div class="ok-msg hidden" id="reset-pw-success"></div>
 </section>
 
 <!-- QUESTION SET EDITOR VIEW -->
@@ -264,6 +276,7 @@ let setsCache = [];
 let editingQuestionId = null;
 let currentSetId = null;
 let currentClassId = null;
+let currentStudentId = null;
 
 function show(id) {
   ["view-auth", "view-dashboard", "view-class", "view-analytics", "view-student", "view-set"].forEach(v => {
@@ -524,6 +537,10 @@ document.getElementById("student-back").onclick = () => {
 
 async function openStudent(classId, studentId, returnView) {
   studentReturnView = returnView;
+  currentStudentId = studentId;
+  document.getElementById("reset-pw-input").value = "";
+  setError("reset-pw-error", "");
+  document.getElementById("reset-pw-success").classList.add("hidden");
   const data = await api("GET", `/api/teacher/classes/${classId}/students/${studentId}`);
 
   document.getElementById("student-detail-name").textContent = data.student.username;
@@ -562,6 +579,23 @@ async function openStudent(classId, studentId, returnView) {
 
   show("view-student");
 }
+
+document.getElementById("btn-reset-password").onclick = async () => {
+  setError("reset-pw-error", "");
+  document.getElementById("reset-pw-success").classList.add("hidden");
+  const pw = document.getElementById("reset-pw-input").value;
+  if (pw.length < 4) return setError("reset-pw-error", "Enter at least 4 characters");
+  if (!confirm("Reset this student's password? They'll need the new one to log in - make sure you can tell them.")) return;
+  try {
+    await api("POST", `/api/teacher/classes/${currentClassId}/students/${currentStudentId}/reset-password`, { new_password: pw });
+    document.getElementById("reset-pw-input").value = "";
+    const successEl = document.getElementById("reset-pw-success");
+    successEl.textContent = "Password reset - tell the student their new password.";
+    successEl.classList.remove("hidden");
+  } catch (e) {
+    setError("reset-pw-error", e.message);
+  }
+};
 
 // ---- question set editor ----
 document.getElementById("set-back").onclick = () => { show("view-dashboard"); refreshSets(); };
