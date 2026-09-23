@@ -23,6 +23,7 @@ export interface CharacterState {
   base_max_hp: number;
   base_atk_damage: number;
   inventory: Item[];
+  storage: Item[]; // Milestone 108: the personal storage chest - same opaque JSON round-trip as inventory
   equipped_weapon: Item | null;
   equipped_helmet: Item | null;
   equipped_chest: Item | null;
@@ -36,6 +37,7 @@ export const DEFAULT_CHARACTER: CharacterState = {
   base_max_hp: 100,
   base_atk_damage: 12,
   inventory: [],
+  storage: [],
   equipped_weapon: null,
   equipped_helmet: null,
   equipped_chest: null,

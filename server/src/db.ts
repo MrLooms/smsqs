@@ -173,4 +173,7 @@ export async function initDb() {
   // it) since its CREATE TABLE IF NOT EXISTS only applies to a fresh table.
   // Postgres's ADD COLUMN IF NOT EXISTS does the same job in one line.
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'student'");
+  // Milestone 108: the personal storage chest - same "existing databases don't get new
+  // columns from CREATE TABLE IF NOT EXISTS" reasoning as role above.
+  await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS storage_json TEXT NOT NULL DEFAULT '[]'");
 }
