@@ -163,4 +163,46 @@ router.get("/my-class-progress", requireAuth, requireRole("student"), ah(async (
   });
 }));
 
+// Milestone 116: top 5 in the student's class, town leaderboard - ranked by level first, then
+// accuracy (a level 10 at 95% outranks a level 8 at 99%, per direct spec). A student with zero
+// attempts sorts as 0% rather than being excluded - still shows up if their level earns a spot.
+router.get("/my-leaderboard", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const membership = await dbGet<{ class_id: number }>(
+    "SELECT class_id FROM class_members WHERE student_id = ?",
+    [req.userId!]
+  );
+
+  if (!membership) {
+    return res.json({ has_class: false });
+  }
+
+  const cls = await dbGet<{ name: string }>("SELECT name FROM classes WHERE id = ?", [membership.class_id]);
+
+  const rows = await dbAll<{ username: string; level: number; attempts: number; correct_count: number }>(
+    `SELECT u.username AS username, ch.level AS level,
+       COALESCE(qa.attempts, 0)::int AS attempts,
+       COALESCE(qa.correct_count, 0)::int AS correct_count
+     FROM class_members cm
+     JOIN users u ON u.id = cm.student_id
+     JOIN characters ch ON ch.user_id = cm.student_id
+     LEFT JOIN (
+       SELECT student_id, COUNT(*)::int AS attempts, COALESCE(SUM(correct), 0)::int AS correct_count
+       FROM question_attempts GROUP BY student_id
+     ) qa ON qa.student_id = cm.student_id
+     WHERE cm.class_id = ?
+     ORDER BY ch.level DESC,
+       CASE WHEN COALESCE(qa.attempts, 0) = 0 THEN 0 ELSE COALESCE(qa.correct_count, 0)::float / qa.attempts END DESC
+     LIMIT 5`,
+    [membership.class_id]
+  );
+
+  const leaderboard = rows.map((r) => ({
+    username: r.username,
+    level: r.level,
+    accuracy_pct: r.attempts > 0 ? Math.round((r.correct_count / r.attempts) * 100) : 0,
+  }));
+
+  res.json({ has_class: true, class_name: cls!.name, leaderboard });
+}));
+
 export default router;

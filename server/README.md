@@ -66,6 +66,7 @@ endpoints — a student token 403s on `/api/teacher/*`, a teacher token
 | POST | `/api/question-attempts` | yes | `{question_id, topic, correct}` | Fire-and-forget from the client's event bus. `class_id` is recorded server-side from current membership, not trusted from the client. |
 | GET | `/api/my-accuracy` | yes | - | Own `{attempts, correct, by_topic: [{topic, attempts, correct_count}]}`. |
 | GET | `/api/my-class-progress` | yes | - | `{has_class: false}`, or `{has_class: true, class_name, total_correct, tier_index, tier_name, next_threshold}` — the whole class's cumulative correct answers mapped against a 5-tier "Class Castle" progression (see `CASTLE_TIERS` in `routes/student.ts`). |
+| GET | `/api/my-leaderboard` | yes | - | `{has_class: false}`, or `{has_class: true, class_name, leaderboard: [{username, level, accuracy_pct}]}` — top 5 in the student's class, ranked by level then accuracy (a 0-attempt student sorts as 0%, not excluded). |
 
 Character snapshot shape (see `src/types.ts`):
 `{level, xp, xp_to_level, base_max_hp, base_atk_damage, inventory: Item[], equipped_weapon, equipped_helmet, equipped_chest, equipped_accessory}`,
