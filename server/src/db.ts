@@ -176,4 +176,8 @@ export async function initDb() {
   // Milestone 108: the personal storage chest - same "existing databases don't get new
   // columns from CREATE TABLE IF NOT EXISTS" reasoning as role above.
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS storage_json TEXT NOT NULL DEFAULT '[]'");
+  // Milestone 166: last known overworld cell, for resuming there on next login instead of
+  // always dropping back in town - see project_warpstone design conversation.
+  await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_x INTEGER");
+  await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_y INTEGER");
 }

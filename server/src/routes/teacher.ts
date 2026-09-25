@@ -4,6 +4,7 @@ import { dbGet, dbAll, dbRun, dbInsertId, withTransaction } from "../db";
 import { generateToken, requireAuth, requireRole, AuthedRequest } from "../auth";
 import { ah } from "../asyncHandler";
 import { parseCsv } from "../csv";
+import { isUsernameAllowed } from "../usernameFilter";
 
 const router = Router();
 
@@ -24,6 +25,9 @@ router.post("/register", ah(async (req, res) => {
   const { username, password } = req.body ?? {};
   if (typeof username !== "string" || username.trim().length < 3) {
     return res.status(400).json({ error: "Username must be at least 3 characters" });
+  }
+  if (!isUsernameAllowed(username)) {
+    return res.status(400).json({ error: "That username isn't allowed - please pick another" });
   }
   if (typeof password !== "string" || password.length < 4) {
     return res.status(400).json({ error: "Password must be at least 4 characters" });

@@ -28,6 +28,13 @@ export interface CharacterState {
   equipped_helmet: Item | null;
   equipped_chest: Item | null;
   equipped_accessory: Item | null;
+  // Milestone 166: last known overworld cell, null until they ever leave town. Only ever set
+  // from an overworld/hub arrival (mp_room_goto on the client) - stepping into a dungeon does
+  // NOT update these, so they stay pointed at the entrance cell for the whole dungeon run. That
+  // makes "resume here on next login" naturally land just outside the dungeon, not town, if
+  // that's where they logged out - see fetch_assigned_questions() in scr_login.gml.
+  world_x: number | null;
+  world_y: number | null;
 }
 
 export const DEFAULT_CHARACTER: CharacterState = {
@@ -42,4 +49,6 @@ export const DEFAULT_CHARACTER: CharacterState = {
   equipped_helmet: null,
   equipped_chest: null,
   equipped_accessory: null,
+  world_x: null,
+  world_y: null,
 };

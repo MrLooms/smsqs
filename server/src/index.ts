@@ -6,6 +6,7 @@ import { initDb, dbGet, dbInsertId, dbRun } from "./db";
 import { generateToken, requireAuth, AuthedRequest } from "./auth";
 import { ah } from "./asyncHandler";
 import { CharacterState, DEFAULT_CHARACTER, Item } from "./types";
+import { isUsernameAllowed } from "./usernameFilter";
 import teacherRouter from "./routes/teacher";
 import studentRouter from "./routes/student";
 import { attachMultiplayer } from "./ws";
@@ -50,6 +51,8 @@ async function loadCharacter(userId: number): Promise<CharacterState> {
     equipped_helmet: parseItem(row.equipped_helmet_json),
     equipped_chest: parseItem(row.equipped_chest_json),
     equipped_accessory: parseItem(row.equipped_accessory_json),
+    world_x: row.world_x ?? null,
+    world_y: row.world_y ?? null,
   };
 }
 
@@ -73,6 +76,9 @@ app.post("/api/register", ah(async (req, res) => {
   const { username, password } = req.body ?? {};
   if (typeof username !== "string" || username.trim().length < 3) {
     return res.status(400).json({ error: "Username must be at least 3 characters" });
+  }
+  if (!isUsernameAllowed(username)) {
+    return res.status(400).json({ error: "That username isn't allowed - please pick another" });
   }
   if (typeof password !== "string" || password.length < 4) {
     return res.status(400).json({ error: "Password must be at least 4 characters" });
@@ -134,6 +140,8 @@ app.put("/api/character", requireAuth, ah(async (req: AuthedRequest, res) => {
        equipped_helmet_json = ?,
        equipped_chest_json = ?,
        equipped_accessory_json = ?,
+       world_x = ?,
+       world_y = ?,
        updated_at = now()
      WHERE user_id = ?`,
     [
@@ -148,6 +156,8 @@ app.put("/api/character", requireAuth, ah(async (req: AuthedRequest, res) => {
       c.equipped_helmet ? JSON.stringify(c.equipped_helmet) : null,
       c.equipped_chest ? JSON.stringify(c.equipped_chest) : null,
       c.equipped_accessory ? JSON.stringify(c.equipped_accessory) : null,
+      c.world_x ?? null,
+      c.world_y ?? null,
       req.userId!,
     ]
   );
