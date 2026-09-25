@@ -114,6 +114,13 @@ app.post("/api/login", ah(async (req, res) => {
     return res.status(401).json({ error: "Invalid username or password" });
   }
 
+  // Milestone 169: single active session per account, by direct request - two Chromebooks
+  // logged into the same account both saved independently with no locking (last PUT wins),
+  // silently stomping each other's inventory/position/XP. A fresh login now revokes every
+  // other session first, so the old device's NEXT request (not instantly - there's no push
+  // channel to it) gets a clean 401 "Invalid or expired token" instead of two live saves racing.
+  await dbRun("DELETE FROM sessions WHERE user_id = ?", [user.id]);
+
   const token = generateToken();
   await dbRun("INSERT INTO sessions (token, user_id) VALUES (?, ?)", [token, user.id]);
 
