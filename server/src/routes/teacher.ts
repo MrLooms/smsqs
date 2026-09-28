@@ -273,13 +273,29 @@ router.post("/classes/:id/students/:studentId/reset-password", ah(async (req: Au
 // broadened along with it: an admin can reset ANY account's password, student or teacher, in a
 // class or not - the whole point of a designated admin account is to have that one full-reach
 // escape hatch instead of every teacher having a partial one.
+// Milestone 172: no ambiguous characters (0/O, 1/l/I) - this gets read aloud or typed by hand,
+// often by a young student, so misreads are the whole failure mode to avoid. Same reasoning as
+// generateJoinCode() above, just longer (a password, not a projected join code).
+function generateSimplePassword(): string {
+  const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
 router.post("/admin/reset-password", requireAdmin, ah(async (req: AuthedRequest, res) => {
-  const { username, new_password } = req.body ?? {};
+  const { username } = req.body ?? {};
+  // Milestone 172: new_password is now optional - omit it (the account list's "Generate new
+  // password" button does this) to get a random one back in the response instead of having to
+  // make one up. The manual username/password fields above still pass an explicit one.
+  let new_password = req.body?.new_password;
 
   if (typeof username !== "string" || username.trim().length === 0) {
     return res.status(400).json({ error: "Enter the account's username" });
   }
-  if (typeof new_password !== "string" || new_password.length < 4) {
+  if (new_password === undefined || new_password === "") {
+    new_password = generateSimplePassword();
+  } else if (typeof new_password !== "string" || new_password.length < 4) {
     return res.status(400).json({ error: "New password must be at least 4 characters" });
   }
 
@@ -287,7 +303,36 @@ router.post("/admin/reset-password", requireAdmin, ah(async (req: AuthedRequest,
   if (!user) return res.status(404).json({ error: "No account with that username" });
 
   await dbRun("UPDATE users SET password_hash = ? WHERE id = ?", [bcrypt.hashSync(new_password, 10), user.id]);
-  res.json({ ok: true });
+  res.json({ ok: true, new_password });
+}));
+
+// Milestone 172: admin-only account search/list, by direct request. `?role=teacher|student`
+// filters by type (omit/anything else = both), `?q=` is a case-insensitive substring match on
+// username. NEVER returns password_hash - there's no "password" column to show, the actual
+// password isn't recoverable from a bcrypt hash by design (that's the whole point of hashing
+// it), so the dashboard's account list pairs with the reset-password route above instead of
+// trying to display one.
+router.get("/admin/accounts", requireAdmin, ah(async (req: AuthedRequest, res) => {
+  const role = req.query.role === "teacher" || req.query.role === "student" ? req.query.role : undefined;
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+
+  const conditions: string[] = [];
+  const params: any[] = [];
+  if (role) {
+    conditions.push("role = ?");
+    params.push(role);
+  }
+  if (q.length > 0) {
+    conditions.push("username ILIKE ?");
+    params.push(`%${q}%`);
+  }
+  const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+
+  const accounts = await dbAll(
+    `SELECT id, username, role, is_admin FROM users ${where} ORDER BY username ASC LIMIT 500`,
+    params
+  );
+  res.json({ accounts });
 }));
 
 router.post("/classes/:id/assign", ah(async (req: AuthedRequest, res) => {

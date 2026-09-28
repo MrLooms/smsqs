@@ -165,6 +165,20 @@
     </div>
     <div class="error hidden" id="admin-reset-error"></div>
     <div class="ok-msg hidden" id="admin-reset-success"></div>
+
+    <h3 style="margin-top:20px">All accounts</h3>
+    <div class="tabs" id="admin-account-tabs">
+      <button class="active" data-role="">All</button>
+      <button data-role="teacher">Teachers</button>
+      <button data-role="student">Students</button>
+    </div>
+    <input id="admin-account-search" placeholder="Search by username..." style="margin-bottom:10px">
+    <div class="ok-msg hidden" id="admin-generate-success"></div>
+    <table class="stats">
+      <thead><tr><th>Username</th><th>Type</th><th></th></tr></thead>
+      <tbody id="admin-accounts-tbody"></tbody>
+    </table>
+    <div class="error hidden" id="admin-accounts-error"></div>
   </div>
 
 </section>
@@ -363,7 +377,9 @@ async function enterDashboard() {
   document.getElementById("logout-link").onclick = logout;
   document.getElementById("admin-reset-card").classList.toggle("hidden", !isAdmin);
   show("view-dashboard");
-  await Promise.all([refreshClasses(), refreshSets()]);
+  const refreshes = [refreshClasses(), refreshSets()];
+  if (isAdmin) refreshes.push(refreshAdminAccounts());
+  await Promise.all(refreshes);
 }
 
 async function refreshClasses() {
@@ -637,6 +653,71 @@ document.getElementById("btn-admin-reset").onclick = async () => {
     setError("admin-reset-error", e.message);
   }
 };
+
+// ---- admin account list (search + role filter + generate-password) ----
+let adminAccountRole = "";
+let adminAccountSearchTimer = null;
+
+document.querySelectorAll("#admin-account-tabs button").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll("#admin-account-tabs button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    adminAccountRole = btn.dataset.role;
+    refreshAdminAccounts();
+  };
+});
+
+document.getElementById("admin-account-search").addEventListener("input", () => {
+  clearTimeout(adminAccountSearchTimer);
+  adminAccountSearchTimer = setTimeout(refreshAdminAccounts, 200);
+});
+
+async function refreshAdminAccounts() {
+  setError("admin-accounts-error", "");
+  const q = document.getElementById("admin-account-search").value.trim();
+  const params = new URLSearchParams();
+  if (adminAccountRole) params.set("role", adminAccountRole);
+  if (q) params.set("q", q);
+  try {
+    const data = await api("GET", "/api/teacher/admin/accounts?" + params.toString());
+    const tbody = document.getElementById("admin-accounts-tbody");
+    tbody.innerHTML = "";
+    if (data.accounts.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='3'><em>No accounts match.</em></td></tr>";
+      return;
+    }
+    data.accounts.forEach(acc => {
+      const tr = document.createElement("tr");
+      const typeLabel = acc.is_admin ? "Admin" : (acc.role === "teacher" ? "Teacher" : "Student");
+      const genBtn = document.createElement("button");
+      genBtn.className = "secondary";
+      genBtn.textContent = "Generate new password";
+      genBtn.onclick = () => generateAccountPassword(acc.username);
+      const tdUser = document.createElement("td");
+      tdUser.textContent = acc.username;
+      const tdType = document.createElement("td");
+      tdType.textContent = typeLabel;
+      const tdAction = document.createElement("td");
+      tdAction.appendChild(genBtn);
+      tr.append(tdUser, tdType, tdAction);
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    setError("admin-accounts-error", e.message);
+  }
+}
+
+async function generateAccountPassword(accUsername) {
+  if (!confirm(`Generate a new password for "${accUsername}"? Their old one stops working immediately.`)) return;
+  try {
+    const data = await api("POST", "/api/teacher/admin/reset-password", { username: accUsername });
+    const successEl = document.getElementById("admin-generate-success");
+    successEl.textContent = `New password for ${accUsername}: ${data.new_password}  (write this down - it won't be shown again)`;
+    successEl.classList.remove("hidden");
+  } catch (e) {
+    setError("admin-accounts-error", e.message);
+  }
+}
 
 // ---- question set editor ----
 document.getElementById("set-back").onclick = () => { show("view-dashboard"); refreshSets(); };
