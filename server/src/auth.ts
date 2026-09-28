@@ -10,12 +10,14 @@ export function generateToken(): string {
 export interface AuthedRequest extends Request {
   userId?: number;
   role?: "teacher" | "student";
+  isAdmin?: boolean;
 }
 
 export interface ResolvedSession {
   userId: number;
   role: "teacher" | "student";
   username: string;
+  isAdmin: boolean;
 }
 
 // Shared by requireAuth (HTTP) and the multiplayer WebSocket handshake
@@ -23,7 +25,7 @@ export interface ResolvedSession {
 // looks up the same sessions table directly off the first client message.
 export async function resolveToken(token: string): Promise<ResolvedSession | undefined> {
   return dbGet<ResolvedSession>(
-    "SELECT s.user_id AS \"userId\", u.role AS role, u.username AS username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?",
+    "SELECT s.user_id AS \"userId\", u.role AS role, u.username AS username, u.is_admin AS \"isAdmin\" FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?",
     [token]
   );
 }
@@ -48,6 +50,7 @@ export const requireAuth = ah(async (req: AuthedRequest, res: Response, next: Ne
 
   req.userId = row.userId;
   req.role = row.role;
+  req.isAdmin = row.isAdmin;
   next();
 });
 
@@ -59,4 +62,16 @@ export function requireRole(role: "teacher" | "student") {
     }
     next();
   };
+}
+
+// Milestone 171: the designated admin account (users.is_admin, set for "tester" - see db.ts)
+// bypasses every per-teacher class-ownership scope. Used for cross-class/cross-teacher fixes a
+// regular teacher shouldn't be able to reach into (e.g. resetting ANY account's password, not
+// just their own students') - by direct request, after a multi-teacher security concern was
+// raised about a broader "any teacher can reset an unassigned account" route.
+export function requireAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
+  if (!req.isAdmin) {
+    return res.status(403).json({ error: "This action requires an admin account" });
+  }
+  next();
 }

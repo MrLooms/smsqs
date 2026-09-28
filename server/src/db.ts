@@ -173,6 +173,12 @@ export async function initDb() {
   // it) since its CREATE TABLE IF NOT EXISTS only applies to a fresh table.
   // Postgres's ADD COLUMN IF NOT EXISTS does the same job in one line.
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'student'");
+  // Milestone 171: a single designated admin account ("tester") that can reset ANY account's
+  // password (student or teacher, any class or none) - bypasses the per-teacher class-ownership
+  // scoping everything else in routes/teacher.ts enforces. Re-applied on every boot (not just at
+  // table-creation time) so it's self-healing if that account ever gets dropped and re-registered.
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false");
+  await pool.query("UPDATE users SET is_admin = true WHERE username = 'tester'");
   // Milestone 108: the personal storage chest - same "existing databases don't get new
   // columns from CREATE TABLE IF NOT EXISTS" reasoning as role above.
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS storage_json TEXT NOT NULL DEFAULT '[]'");

@@ -151,6 +151,22 @@
     <div class="error hidden" id="set-error"></div>
   </div>
 
+  <div class="card hidden" id="admin-reset-card">
+    <h2>Admin: reset any account's password</h2>
+    <p style="color:var(--muted); font-size:13px">
+      Admin-only. Works for ANY username - student or teacher, in any class or none - unlike the
+      per-class reset above, which only reaches your own students. Visible only on the
+      designated admin account.
+    </p>
+    <div class="row">
+      <input id="admin-reset-username" placeholder="Their username">
+      <input id="admin-reset-password" type="text" placeholder="New password (4+ characters)">
+      <button class="danger" id="btn-admin-reset">Reset Password</button>
+    </div>
+    <div class="error hidden" id="admin-reset-error"></div>
+    <div class="ok-msg hidden" id="admin-reset-success"></div>
+  </div>
+
 </section>
 
 <!-- CLASS DETAIL VIEW -->
@@ -271,6 +287,7 @@
 const API = "";
 let token = localStorage.getItem("teacher_token") || null;
 let username = localStorage.getItem("teacher_username") || null;
+let isAdmin = localStorage.getItem("teacher_is_admin") === "true";
 let classesCache = [];
 let setsCache = [];
 let editingQuestionId = null;
@@ -319,8 +336,10 @@ async function doAuth(path) {
     const data = await api("POST", path, { username: u, password: p });
     token = data.token;
     username = data.username;
+    isAdmin = !!data.is_admin;
     localStorage.setItem("teacher_token", token);
     localStorage.setItem("teacher_username", username);
+    localStorage.setItem("teacher_is_admin", isAdmin);
     enterDashboard();
   } catch (e) {
     setError("auth-error", e.message);
@@ -331,6 +350,7 @@ function logout() {
   token = null;
   localStorage.removeItem("teacher_token");
   localStorage.removeItem("teacher_username");
+  localStorage.removeItem("teacher_is_admin");
   document.getElementById("whoami").textContent = "";
   show("view-auth");
 }
@@ -341,6 +361,7 @@ async function enterDashboard() {
     '<a class="link" onclick="logout()">log out</a>'.replace(/<[^>]+>/g, m => m); // keep text simple below
   document.getElementById("whoami").innerHTML = username + ' &middot; <a class="link" id="logout-link">log out</a>';
   document.getElementById("logout-link").onclick = logout;
+  document.getElementById("admin-reset-card").classList.toggle("hidden", !isAdmin);
   show("view-dashboard");
   await Promise.all([refreshClasses(), refreshSets()]);
 }
@@ -594,6 +615,26 @@ document.getElementById("btn-reset-password").onclick = async () => {
     successEl.classList.remove("hidden");
   } catch (e) {
     setError("reset-pw-error", e.message);
+  }
+};
+
+document.getElementById("btn-admin-reset").onclick = async () => {
+  setError("admin-reset-error", "");
+  document.getElementById("admin-reset-success").classList.add("hidden");
+  const username = document.getElementById("admin-reset-username").value.trim();
+  const pw = document.getElementById("admin-reset-password").value;
+  if (!username) return setError("admin-reset-error", "Enter their username");
+  if (pw.length < 4) return setError("admin-reset-error", "Enter at least 4 characters");
+  if (!confirm(`Reset the password for "${username}"? Make sure you can tell them the new one.`)) return;
+  try {
+    await api("POST", "/api/teacher/admin/reset-password", { username, new_password: pw });
+    document.getElementById("admin-reset-username").value = "";
+    document.getElementById("admin-reset-password").value = "";
+    const successEl = document.getElementById("admin-reset-success");
+    successEl.textContent = "Password reset - tell them the new password.";
+    successEl.classList.remove("hidden");
+  } catch (e) {
+    setError("admin-reset-error", e.message);
   }
 };
 

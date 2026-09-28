@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { dbGet, dbAll, dbRun, dbInsertId, withTransaction } from "../db";
-import { generateToken, requireAuth, requireRole, AuthedRequest } from "../auth";
+import { generateToken, requireAuth, requireRole, requireAdmin, AuthedRequest } from "../auth";
 import { ah } from "../asyncHandler";
 import { parseCsv } from "../csv";
 import { isUsernameAllowed } from "../usernameFilter";
@@ -47,12 +47,12 @@ router.post("/register", ah(async (req, res) => {
   const token = generateToken();
   await dbRun("INSERT INTO sessions (token, user_id) VALUES (?, ?)", [token, userId]);
 
-  res.status(201).json({ token, username });
+  res.status(201).json({ token, username, is_admin: false });
 }));
 
 router.post("/login", ah(async (req, res) => {
   const { username, password } = req.body ?? {};
-  const user = await dbGet<{ id: number; username: string; password_hash: string; role: string }>(
+  const user = await dbGet<{ id: number; username: string; password_hash: string; role: string; is_admin: boolean }>(
     "SELECT * FROM users WHERE username = ?",
     [username]
   );
@@ -64,7 +64,7 @@ router.post("/login", ah(async (req, res) => {
   const token = generateToken();
   await dbRun("INSERT INTO sessions (token, user_id) VALUES (?, ?)", [token, user.id]);
 
-  res.json({ token, username: user.username });
+  res.json({ token, username: user.username, is_admin: user.is_admin });
 }));
 
 // Everything below requires a teacher session.
@@ -261,6 +261,32 @@ router.post("/classes/:id/students/:studentId/reset-password", ah(async (req: Au
   if (!member) return res.status(404).json({ error: "Student not found in this class" });
 
   await dbRun("UPDATE users SET password_hash = ? WHERE id = ?", [bcrypt.hashSync(new_password, 10), studentId]);
+  res.json({ ok: true });
+}));
+
+// Milestone 171 (was M170's "/students/unassigned/reset-password"): the M100 route above only
+// reaches a student in one of THIS teacher's own classes - a student who registered but never
+// joined any class had no recovery path at all. The first version of this fix let ANY teacher
+// reset ANY unassigned account, which is exactly the multi-teacher security gap flagged - a
+// teacher shouldn't be able to touch an account outside their own classes just because it
+// happens to be orphaned. Now admin-only (requireAdmin - see auth.ts's users.is_admin), and
+// broadened along with it: an admin can reset ANY account's password, student or teacher, in a
+// class or not - the whole point of a designated admin account is to have that one full-reach
+// escape hatch instead of every teacher having a partial one.
+router.post("/admin/reset-password", requireAdmin, ah(async (req: AuthedRequest, res) => {
+  const { username, new_password } = req.body ?? {};
+
+  if (typeof username !== "string" || username.trim().length === 0) {
+    return res.status(400).json({ error: "Enter the account's username" });
+  }
+  if (typeof new_password !== "string" || new_password.length < 4) {
+    return res.status(400).json({ error: "New password must be at least 4 characters" });
+  }
+
+  const user = await dbGet<{ id: number }>("SELECT id FROM users WHERE username = ?", [username]);
+  if (!user) return res.status(404).json({ error: "No account with that username" });
+
+  await dbRun("UPDATE users SET password_hash = ? WHERE id = ?", [bcrypt.hashSync(new_password, 10), user.id]);
   res.json({ ok: true });
 }));
 
