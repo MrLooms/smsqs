@@ -5,6 +5,18 @@ import { ah } from "../asyncHandler";
 
 const router = Router();
 
+// Milestone 175: shared by my-questions/question-attempts/my-class-progress/my-leaderboard
+// below - all four used to each run their own "SELECT class_id FROM class_members WHERE
+// student_id = ?" (correct back when a student could only ever have one row there); now that
+// membership is many-to-many, they all need the ONE active class instead.
+async function getActiveClassId(userId: number): Promise<number | null> {
+  const user = await dbGet<{ active_class_id: number | null }>(
+    "SELECT active_class_id FROM users WHERE id = ?",
+    [userId]
+  );
+  return user?.active_class_id ?? null;
+}
+
 // requireAuth/requireRole are applied per-route (not via a blanket
 // router.use()) because this router is mounted at the broad "/api" prefix
 // alongside unrelated routes (register/login/character) defined directly
@@ -13,8 +25,11 @@ const router = Router();
 // whether a specific route matches, which is exactly what happened the
 // first time this was written: it 401'd plain registration too.
 
-// A student is in at most one class at a time for the MVP - joining a new
-// one replaces the old membership rather than stacking them.
+// Milestone 175: a student can now be in several classes at once - joining a new one ADDS a
+// membership (ON CONFLICT DO NOTHING covers re-entering a code for a class already joined) and
+// makes it the active one, rather than replacing whatever they were in before. See db.ts's
+// users.active_class_id - that's what my-questions/question-attempts/my-class-progress/
+// my-leaderboard below actually resolve against now.
 router.post("/classes/join", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
   const { join_code } = req.body ?? {};
   if (typeof join_code !== "string" || join_code.trim().length === 0) {
@@ -27,18 +42,61 @@ router.post("/classes/join", requireAuth, requireRole("student"), ah(async (req:
   );
   if (!cls) return res.status(404).json({ error: "No class with that code" });
 
-  await dbRun("DELETE FROM class_members WHERE student_id = ?", [req.userId!]);
-  await dbRun("INSERT INTO class_members (class_id, student_id) VALUES (?, ?)", [cls.id, req.userId!]);
+  await dbRun(
+    "INSERT INTO class_members (class_id, student_id) VALUES (?, ?) ON CONFLICT (class_id, student_id) DO NOTHING",
+    [cls.id, req.userId!]
+  );
+  await dbRun("UPDATE users SET active_class_id = ? WHERE id = ?", [cls.id, req.userId!]);
 
   res.json({ class: cls });
 }));
 
-// Milestone 12: class membership is meant to be a standing account
-// setting, not something re-entered at every login - this is the other
-// half of that, letting a student clear it (e.g. before joining a
-// different class next semester, or if they joined the wrong one).
-router.post("/classes/leave", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
-  await dbRun("DELETE FROM class_members WHERE student_id = ?", [req.userId!]);
+// Milestone 175: every class the student has joined, plus which one is active. Powers the
+// class-enrollment NPC's swap menu - see obj_class_desk.
+router.get("/classes/mine", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const classes = await dbAll<{ id: number; name: string }>(
+    `SELECT c.id, c.name FROM class_members cm JOIN classes c ON c.id = cm.class_id
+     WHERE cm.student_id = ? ORDER BY cm.joined_at ASC`,
+    [req.userId!]
+  );
+  const activeClassId = await getActiveClassId(req.userId!);
+  res.json({ classes, active_class_id: activeClassId });
+}));
+
+// Milestone 175: swap which already-joined class is active - doesn't touch membership, just
+// which one my-questions/etc. resolve against from here on.
+router.post("/classes/active", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const classId = Number(req.body?.class_id);
+  if (!Number.isFinite(classId)) {
+    return res.status(400).json({ error: "class_id is required" });
+  }
+
+  const member = await dbGet(
+    "SELECT class_id FROM class_members WHERE class_id = ? AND student_id = ?",
+    [classId, req.userId!]
+  );
+  if (!member) return res.status(404).json({ error: "You're not a member of that class" });
+
+  await dbRun("UPDATE users SET active_class_id = ? WHERE id = ?", [classId, req.userId!]);
+  res.json({ ok: true });
+}));
+
+// Milestone 175 (was body-less "/classes/leave", cleared every membership): leaves ONE specific
+// class now. If that happened to be the active one, falls back to the next most-recently-joined
+// remaining membership, or null (practice-questions mode) if that was the last one.
+router.post("/classes/:id/leave", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const classId = Number(req.params.id);
+  await dbRun("DELETE FROM class_members WHERE class_id = ? AND student_id = ?", [classId, req.userId!]);
+
+  const activeClassId = await getActiveClassId(req.userId!);
+  if (activeClassId === classId) {
+    const next = await dbGet<{ class_id: number }>(
+      "SELECT class_id FROM class_members WHERE student_id = ? ORDER BY joined_at DESC LIMIT 1",
+      [req.userId!]
+    );
+    await dbRun("UPDATE users SET active_class_id = ? WHERE id = ?", [next?.class_id ?? null, req.userId!]);
+  }
+
   res.json({ ok: true });
 }));
 
@@ -46,12 +104,9 @@ router.post("/classes/leave", requireAuth, requireRole("student"), ah(async (req
 // student's class into one flat pool, already shaped to match
 // scr_questions.gml's struct fields so the client can use it as-is.
 router.get("/my-questions", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
-  const membership = await dbGet<{ class_id: number }>(
-    "SELECT class_id FROM class_members WHERE student_id = ?",
-    [req.userId!]
-  );
+  const activeClassId = await getActiveClassId(req.userId!);
 
-  if (!membership) {
+  if (!activeClassId) {
     return res.json({ questions: [] });
   }
 
@@ -59,7 +114,7 @@ router.get("/my-questions", requireAuth, requireRole("student"), ah(async (req: 
     `SELECT q.* FROM questions q
      JOIN class_assignments ca ON ca.question_set_id = q.question_set_id
      WHERE ca.class_id = ?`,
-    [membership.class_id]
+    [activeClassId]
   );
 
   const questions = rows.map((r) => ({
@@ -88,14 +143,11 @@ router.post("/question-attempts", requireAuth, requireRole("student"), ah(async 
     return res.status(400).json({ error: "correct (boolean) is required" });
   }
 
-  const membership = await dbGet<{ class_id: number }>(
-    "SELECT class_id FROM class_members WHERE student_id = ?",
-    [req.userId!]
-  );
+  const activeClassId = await getActiveClassId(req.userId!);
 
   await dbRun(
     "INSERT INTO question_attempts (student_id, class_id, question_id, topic, correct) VALUES (?, ?, ?, ?, ?)",
-    [req.userId!, membership?.class_id ?? null, question_id != null ? String(question_id) : null, topic ?? null, correct ? 1 : 0]
+    [req.userId!, activeClassId, question_id != null ? String(question_id) : null, topic ?? null, correct ? 1 : 0]
   );
 
   res.status(201).json({ ok: true });
@@ -132,19 +184,16 @@ const CASTLE_TIERS = [
 ];
 
 router.get("/my-class-progress", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
-  const membership = await dbGet<{ class_id: number }>(
-    "SELECT class_id FROM class_members WHERE student_id = ?",
-    [req.userId!]
-  );
+  const activeClassId = await getActiveClassId(req.userId!);
 
-  if (!membership) {
+  if (!activeClassId) {
     return res.json({ has_class: false });
   }
 
-  const cls = await dbGet<{ name: string }>("SELECT name FROM classes WHERE id = ?", [membership.class_id]);
+  const cls = await dbGet<{ name: string }>("SELECT name FROM classes WHERE id = ?", [activeClassId]);
   const row = await dbGet<{ total_correct: number }>(
     "SELECT COALESCE(SUM(correct), 0)::int AS total_correct FROM question_attempts WHERE class_id = ?",
-    [membership.class_id]
+    [activeClassId]
   );
 
   let tierIndex = 0;
@@ -167,16 +216,13 @@ router.get("/my-class-progress", requireAuth, requireRole("student"), ah(async (
 // accuracy (a level 10 at 95% outranks a level 8 at 99%, per direct spec). A student with zero
 // attempts sorts as 0% rather than being excluded - still shows up if their level earns a spot.
 router.get("/my-leaderboard", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
-  const membership = await dbGet<{ class_id: number }>(
-    "SELECT class_id FROM class_members WHERE student_id = ?",
-    [req.userId!]
-  );
+  const activeClassId = await getActiveClassId(req.userId!);
 
-  if (!membership) {
+  if (!activeClassId) {
     return res.json({ has_class: false });
   }
 
-  const cls = await dbGet<{ name: string }>("SELECT name FROM classes WHERE id = ?", [membership.class_id]);
+  const cls = await dbGet<{ name: string }>("SELECT name FROM classes WHERE id = ?", [activeClassId]);
 
   const rows = await dbAll<{ username: string; level: number; attempts: number; correct_count: number }>(
     `SELECT u.username AS username, ch.level AS level,
@@ -193,7 +239,7 @@ router.get("/my-leaderboard", requireAuth, requireRole("student"), ah(async (req
      ORDER BY ch.level DESC,
        CASE WHEN COALESCE(qa.attempts, 0) = 0 THEN 0 ELSE COALESCE(qa.correct_count, 0)::float / qa.attempts END DESC
      LIMIT 5`,
-    [membership.class_id]
+    [activeClassId]
   );
 
   const leaderboard = rows.map((r) => ({

@@ -185,6 +185,13 @@ export async function initDb() {
   // students go through their teacher (see M100/M171's teacher-initiated resets) since typing an
   // email at signup isn't realistic for a grades 5-9 classroom account.
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT");
+  // Milestone 175: multi-class membership - class_members' own PK (class_id, student_id) already
+  // permitted more than one row per student (nothing enforced single-class at the DB layer), the
+  // MVP-era single-class assumption was only in the route logic (join deleted every existing
+  // membership first). This tracks which ONE of a student's several joined classes is "active"
+  // right now - the one my-questions/question-attempts/my-class-progress/my-leaderboard actually
+  // use. NULL until they've ever joined a class.
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS active_class_id INTEGER REFERENCES classes(id)");
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       token TEXT PRIMARY KEY,
