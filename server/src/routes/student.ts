@@ -46,7 +46,10 @@ router.post("/classes/join", requireAuth, requireRole("student"), ah(async (req:
     "INSERT INTO class_members (class_id, student_id) VALUES (?, ?) ON CONFLICT (class_id, student_id) DO NOTHING",
     [cls.id, req.userId!]
   );
-  await dbRun("UPDATE users SET active_class_id = ? WHERE id = ?", [cls.id, req.userId!]);
+  // Milestone 176: only auto-activate on the student's FIRST-ever class - joining a 2nd/3rd one
+  // (e.g. just to have it on file) shouldn't silently yank them out of whatever class they're
+  // actively working in. Use classes/active to switch on purpose.
+  await dbRun("UPDATE users SET active_class_id = ? WHERE id = ? AND active_class_id IS NULL", [cls.id, req.userId!]);
 
   res.json({ class: cls });
 }));
