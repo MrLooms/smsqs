@@ -116,16 +116,31 @@
 
 <!-- AUTH VIEW -->
 <section id="view-auth" class="card hidden">
-  <h2>Log in or create a teacher account</h2>
+  <h2>Teacher login</h2>
   <div class="row">
     <input id="auth-username" placeholder="Username" autocomplete="username">
     <input id="auth-password" type="password" placeholder="Password" autocomplete="current-password">
-    <input id="auth-email" type="email" placeholder="Email (new accounts only)" autocomplete="email">
     <button id="btn-login">Log in</button>
-    <button class="secondary" id="btn-register">Create account</button>
   </div>
   <div class="error hidden" id="auth-error"></div>
-  <p style="margin-top:10px"><a class="link" id="link-forgot-password">Forgot password?</a></p>
+  <p style="margin-top:10px">
+    <a class="link" id="link-forgot-password">Forgot password?</a>
+    &nbsp;&middot;&nbsp;
+    <a class="link" id="link-to-register">Create a Teacher Account</a>
+  </p>
+</section>
+
+<!-- CREATE ACCOUNT -->
+<section id="view-register" class="card hidden">
+  <h2>Create a teacher account</h2>
+  <div class="row">
+    <input id="register-username" placeholder="Username" autocomplete="username">
+    <input id="register-password" type="password" placeholder="Password" autocomplete="new-password">
+    <input id="register-email" type="email" placeholder="Email" autocomplete="email">
+    <button id="btn-register">Create account</button>
+  </div>
+  <div class="error hidden" id="register-error"></div>
+  <p style="margin-top:10px"><a class="link" id="link-back-to-login-from-register">&larr; Back to login</a></p>
 </section>
 
 <!-- FORGOT PASSWORD: request a reset email -->
@@ -338,7 +353,7 @@ let currentClassId = null;
 let currentStudentId = null;
 
 function show(id) {
-  ["view-auth", "view-forgot", "view-reset-token", "view-dashboard", "view-class", "view-analytics", "view-student", "view-set"].forEach(v => {
+  ["view-auth", "view-register", "view-forgot", "view-reset-token", "view-dashboard", "view-class", "view-analytics", "view-student", "view-set"].forEach(v => {
     document.getElementById(v).classList.toggle("hidden", v !== id);
   });
 }
@@ -367,16 +382,19 @@ function setError(elId, msg) {
 }
 
 // ---- auth ----
-document.getElementById("btn-login").onclick = () => doAuth("/api/teacher/login");
-document.getElementById("btn-register").onclick = () => doAuth("/api/teacher/register");
+// Milestone 174: login and "create account" split into separate screens, by direct request -
+// was one combined form; now view-auth is login-only with a link across to view-register.
+document.getElementById("btn-login").onclick = () => doAuth("/api/teacher/login", "auth-username", "auth-password", null, "auth-error");
+document.getElementById("btn-register").onclick = () => doAuth("/api/teacher/register", "register-username", "register-password", "register-email", "register-error");
+document.getElementById("link-to-register").onclick = () => { setError("register-error", ""); show("view-register"); };
+document.getElementById("link-back-to-login-from-register").onclick = () => show("view-auth");
 
-async function doAuth(path) {
-  setError("auth-error", "");
-  const u = document.getElementById("auth-username").value.trim();
-  const p = document.getElementById("auth-password").value;
-  const em = document.getElementById("auth-email").value.trim();
+async function doAuth(path, userFieldId, passFieldId, emailFieldId, errorElId) {
+  setError(errorElId, "");
+  const u = document.getElementById(userFieldId).value.trim();
+  const p = document.getElementById(passFieldId).value;
   const body = { username: u, password: p };
-  if (path.endsWith("/register")) body.email = em; // login ignores it, only register needs it
+  if (emailFieldId) body.email = document.getElementById(emailFieldId).value.trim();
   try {
     const data = await api("POST", path, body);
     token = data.token;
@@ -387,7 +405,7 @@ async function doAuth(path) {
     localStorage.setItem("teacher_is_admin", isAdmin);
     enterDashboard();
   } catch (e) {
-    setError("auth-error", e.message);
+    setError(errorElId, e.message);
   }
 }
 
