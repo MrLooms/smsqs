@@ -179,6 +179,20 @@ export async function initDb() {
   // table-creation time) so it's self-healing if that account ever gets dropped and re-registered.
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false");
   await pool.query("UPDATE users SET is_admin = true WHERE username = 'tester'");
+  // Milestone 173: teacher password recovery - null for every existing account (including old
+  // teacher accounts registered before this existed), required only for NEW teacher registrations
+  // going forward. A student account never has one - the "forgot password" flow is teacher-only,
+  // students go through their teacher (see M100/M171's teacher-initiated resets) since typing an
+  // email at signup isn't realistic for a grades 5-9 classroom account.
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT");
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      token TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
   // Milestone 108: the personal storage chest - same "existing databases don't get new
   // columns from CREATE TABLE IF NOT EXISTS" reasoning as role above.
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS storage_json TEXT NOT NULL DEFAULT '[]'");

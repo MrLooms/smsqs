@@ -19,3 +19,12 @@ services:
         fromDatabase:
           name: sms-quest-db
           property: connectionString
+      # Milestone 173: teacher "forgot password" email (Resend). sync: false means Render
+      # prompts for these instead of storing a value here - real secrets never belong in this
+      # file. This service was created before these existed, so they were also added directly
+      # in Render's dashboard (see project_server_deploy memory's blueprint-sync gotcha) - this
+      # entry documents them for the next time a blueprint actually creates the service fresh.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false

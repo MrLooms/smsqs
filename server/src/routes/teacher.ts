@@ -5,8 +5,14 @@ import { generateToken, requireAuth, requireRole, requireAdmin, AuthedRequest } 
 import { ah } from "../asyncHandler";
 import { parseCsv } from "../csv";
 import { isUsernameAllowed } from "../usernameFilter";
+import { sendPasswordResetEmail } from "../email";
 
 const router = Router();
+
+// Deliberately loose - just enough to catch a typo'd/empty field, not a full RFC 5322 validator.
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
 async function generateJoinCode(): Promise<string> {
   // No 0/O/1/I/L - easy to misread on a projector, easy to mistype.
@@ -22,7 +28,7 @@ async function generateJoinCode(): Promise<string> {
 }
 
 router.post("/register", ah(async (req, res) => {
-  const { username, password } = req.body ?? {};
+  const { username, password, email } = req.body ?? {};
   if (typeof username !== "string" || username.trim().length < 3) {
     return res.status(400).json({ error: "Username must be at least 3 characters" });
   }
@@ -32,22 +38,86 @@ router.post("/register", ah(async (req, res) => {
   if (typeof password !== "string" || password.length < 4) {
     return res.status(400).json({ error: "Password must be at least 4 characters" });
   }
+  // Milestone 173: email is now required for a teacher account - it's the only way to recover a
+  // forgotten password (students go through their teacher instead, see M100/M171). Existing
+  // teacher accounts registered before this stay email-less; not retroactively enforced.
+  if (typeof email !== "string" || !isValidEmail(email.trim())) {
+    return res.status(400).json({ error: "A valid email address is required" });
+  }
 
   const existing = await dbGet("SELECT id FROM users WHERE username = ?", [username]);
   if (existing) {
     return res.status(409).json({ error: "Username already taken" });
   }
+  const emailTaken = await dbGet("SELECT id FROM users WHERE email = ?", [email.trim()]);
+  if (emailTaken) {
+    return res.status(409).json({ error: "An account already uses that email" });
+  }
 
   const passwordHash = bcrypt.hashSync(password, 10);
   const userId = await dbInsertId(
-    "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'teacher')",
-    [username, passwordHash]
+    "INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, 'teacher', ?)",
+    [username, passwordHash, email.trim()]
   );
 
   const token = generateToken();
   await dbRun("INSERT INTO sessions (token, user_id) VALUES (?, ?)", [token, userId]);
 
   res.status(201).json({ token, username, is_admin: false });
+}));
+
+// Milestone 173: traditional email-based password recovery, teacher accounts only (students
+// have no email on file - they go through their teacher instead, see M100/M171). Always
+// responds the same way regardless of whether the email matches an account, so this can't be
+// used to probe which emails are registered.
+router.post("/forgot-password", ah(async (req, res) => {
+  const { email } = req.body ?? {};
+  if (typeof email !== "string" || !isValidEmail(email.trim())) {
+    return res.status(400).json({ error: "Enter a valid email address" });
+  }
+
+  const user = await dbGet<{ id: number }>(
+    "SELECT id FROM users WHERE email = ? AND role = 'teacher'",
+    [email.trim()]
+  );
+
+  if (user) {
+    const resetToken = generateToken();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await dbRun(
+      "INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (?, ?, ?)",
+      [resetToken, user.id, expiresAt]
+    );
+    const baseUrl = process.env.PUBLIC_BASE_URL || "https://sms-quest-server.onrender.com";
+    const resetUrl = `${baseUrl}/teacher.html?reset_token=${resetToken}`;
+    // Best-effort - a real email failure (misconfigured Resend, no verified domain) shouldn't
+    // reveal account existence via a different error message, so this stays silent either way.
+    await sendPasswordResetEmail(email.trim(), resetUrl).catch(() => {});
+  }
+
+  res.json({ ok: true });
+}));
+
+router.post("/reset-password-with-token", ah(async (req, res) => {
+  const { token: resetToken, new_password } = req.body ?? {};
+  if (typeof resetToken !== "string" || resetToken.length === 0) {
+    return res.status(400).json({ error: "Missing reset token" });
+  }
+  if (typeof new_password !== "string" || new_password.length < 4) {
+    return res.status(400).json({ error: "New password must be at least 4 characters" });
+  }
+
+  const row = await dbGet<{ user_id: number; expires_at: string }>(
+    "SELECT user_id, expires_at FROM password_reset_tokens WHERE token = ?",
+    [resetToken]
+  );
+  if (!row || new Date(row.expires_at).getTime() < Date.now()) {
+    return res.status(400).json({ error: "This reset link is invalid or has expired - request a new one" });
+  }
+
+  await dbRun("UPDATE users SET password_hash = ? WHERE id = ?", [bcrypt.hashSync(new_password, 10), row.user_id]);
+  await dbRun("DELETE FROM password_reset_tokens WHERE token = ?", [resetToken]);
+  res.json({ ok: true });
 }));
 
 router.post("/login", ah(async (req, res) => {

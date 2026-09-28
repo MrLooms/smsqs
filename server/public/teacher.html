@@ -120,10 +120,38 @@
   <div class="row">
     <input id="auth-username" placeholder="Username" autocomplete="username">
     <input id="auth-password" type="password" placeholder="Password" autocomplete="current-password">
+    <input id="auth-email" type="email" placeholder="Email (new accounts only)" autocomplete="email">
     <button id="btn-login">Log in</button>
     <button class="secondary" id="btn-register">Create account</button>
   </div>
   <div class="error hidden" id="auth-error"></div>
+  <p style="margin-top:10px"><a class="link" id="link-forgot-password">Forgot password?</a></p>
+</section>
+
+<!-- FORGOT PASSWORD: request a reset email -->
+<section id="view-forgot" class="card hidden">
+  <h2>Reset your password</h2>
+  <p style="color:var(--muted); font-size:13px">
+    Enter the email you registered with. If it matches a teacher account, we'll send a reset link.
+  </p>
+  <div class="row">
+    <input id="forgot-email" type="email" placeholder="Email" autocomplete="email">
+    <button id="btn-send-reset">Send reset link</button>
+  </div>
+  <div class="error hidden" id="forgot-error"></div>
+  <div class="ok-msg hidden" id="forgot-success"></div>
+  <p style="margin-top:10px"><a class="link" id="link-back-to-login">&larr; Back to login</a></p>
+</section>
+
+<!-- FORGOT PASSWORD: set a new password from the emailed link (?reset_token=...) -->
+<section id="view-reset-token" class="card hidden">
+  <h2>Set a new password</h2>
+  <div class="row">
+    <input id="reset-token-password" type="password" placeholder="New password (4+ characters)" autocomplete="new-password">
+    <button id="btn-reset-token-submit">Set new password</button>
+  </div>
+  <div class="error hidden" id="reset-token-error"></div>
+  <div class="ok-msg hidden" id="reset-token-success"></div>
 </section>
 
 <!-- DASHBOARD VIEW -->
@@ -310,7 +338,7 @@ let currentClassId = null;
 let currentStudentId = null;
 
 function show(id) {
-  ["view-auth", "view-dashboard", "view-class", "view-analytics", "view-student", "view-set"].forEach(v => {
+  ["view-auth", "view-forgot", "view-reset-token", "view-dashboard", "view-class", "view-analytics", "view-student", "view-set"].forEach(v => {
     document.getElementById(v).classList.toggle("hidden", v !== id);
   });
 }
@@ -346,8 +374,11 @@ async function doAuth(path) {
   setError("auth-error", "");
   const u = document.getElementById("auth-username").value.trim();
   const p = document.getElementById("auth-password").value;
+  const em = document.getElementById("auth-email").value.trim();
+  const body = { username: u, password: p };
+  if (path.endsWith("/register")) body.email = em; // login ignores it, only register needs it
   try {
-    const data = await api("POST", path, { username: u, password: p });
+    const data = await api("POST", path, body);
     token = data.token;
     username = data.username;
     isAdmin = !!data.is_admin;
@@ -891,8 +922,54 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// ---- forgot password ----
+document.getElementById("link-forgot-password").onclick = () => {
+  setError("auth-error", "");
+  show("view-forgot");
+};
+document.getElementById("link-back-to-login").onclick = () => show("view-auth");
+
+document.getElementById("btn-send-reset").onclick = async () => {
+  setError("forgot-error", "");
+  document.getElementById("forgot-success").classList.add("hidden");
+  const email = document.getElementById("forgot-email").value.trim();
+  if (!email) return setError("forgot-error", "Enter your email");
+  try {
+    await api("POST", "/api/teacher/forgot-password", { email });
+    const successEl = document.getElementById("forgot-success");
+    successEl.textContent = "If that email is registered, a reset link is on its way - check your inbox.";
+    successEl.classList.remove("hidden");
+  } catch (e) {
+    setError("forgot-error", e.message);
+  }
+};
+
+document.getElementById("btn-reset-token-submit").onclick = async () => {
+  setError("reset-token-error", "");
+  const pw = document.getElementById("reset-token-password").value;
+  if (pw.length < 4) return setError("reset-token-error", "Enter at least 4 characters");
+  try {
+    await api("POST", "/api/teacher/reset-password-with-token", { token: resetTokenFromUrl, new_password: pw });
+    const successEl = document.getElementById("reset-token-success");
+    successEl.textContent = "Password reset - you can log in with it now.";
+    successEl.classList.remove("hidden");
+    document.getElementById("btn-reset-token-submit").disabled = true;
+    setTimeout(() => {
+      window.history.replaceState({}, "", window.location.pathname);
+      show("view-auth");
+    }, 2000);
+  } catch (e) {
+    setError("reset-token-error", e.message);
+  }
+};
+
 // ---- boot ----
-if (token) {
+const resetTokenFromUrl = new URLSearchParams(window.location.search).get("reset_token");
+if (resetTokenFromUrl) {
+  // Takes priority over an existing session - clicking the emailed link should always show the
+  // "set new password" form, even if this browser happens to already be logged in as someone.
+  show("view-reset-token");
+} else if (token) {
   enterDashboard().catch(() => { logout(); });
 } else {
   show("view-auth");
