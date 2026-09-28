@@ -215,6 +215,36 @@ router.get("/my-class-progress", requireAuth, requireRole("student"), ah(async (
   });
 }));
 
+// Milestone 178: debug-only, mirrors the client's own debug_keys_enabled() gate (scr_player.gml
+// - username "test", case-insensitive) so this can't just be called by any student even if they
+// found the route - it inserts 50 correct question_attempts rows against whatever class is
+// currently active, to test the class castle's tier thresholds without answering 50 real
+// questions.
+router.post("/debug/add-class-correct", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const user = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [req.userId!]);
+  if (!user || user.username.toLowerCase() !== "test") {
+    return res.status(403).json({ error: "Debug-only route" });
+  }
+
+  const activeClassId = await getActiveClassId(req.userId!);
+  if (!activeClassId) {
+    return res.status(400).json({ error: "Not in a class" });
+  }
+
+  const values: string[] = [];
+  const params: any[] = [];
+  for (let i = 0; i < 50; i++) {
+    values.push("(?, ?, ?, ?, ?)");
+    params.push(req.userId!, activeClassId, null, "debug", 1);
+  }
+  await dbRun(
+    `INSERT INTO question_attempts (student_id, class_id, question_id, topic, correct) VALUES ${values.join(", ")}`,
+    params
+  );
+
+  res.json({ ok: true });
+}));
+
 // Milestone 116: top 5 in the student's class, town leaderboard - ranked by level first, then
 // accuracy (a level 10 at 95% outranks a level 8 at 99%, per direct spec). A student with zero
 // attempts sorts as 0% rather than being excluded - still shows up if their level earns a spot.
