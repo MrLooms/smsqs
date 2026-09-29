@@ -23,6 +23,9 @@ export interface Item {
 export interface Appearance {
   skin: string;
   hair: string;
+  // Milestone 190: hair color is a client-side shader recolor (scr_hair_color.gml), not a
+  // separate sprite variant - the server just round-trips the chosen palette name.
+  hair_color: string;
   torso: string;
   legs: string;
   feet: string;
@@ -53,6 +56,7 @@ export interface CharacterState {
 export const DEFAULT_APPEARANCE: Appearance = {
   skin: "light",
   hair: "plain_auburn",
+  hair_color: "orange",
   torso: "leather",
   legs: "pants",
   feet: "boots",

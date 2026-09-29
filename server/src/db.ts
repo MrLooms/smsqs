@@ -212,4 +212,7 @@ export async function initDb() {
   // storage_json above. Default matches the phase-1 default combo so existing characters
   // look unchanged until they visit the wardrobe keeper.
   await pool.query(`ALTER TABLE characters ADD COLUMN IF NOT EXISTS appearance_json TEXT NOT NULL DEFAULT '{"skin":"light","hair":"plain_auburn","torso":"leather","legs":"pants","feet":"boots"}'`);
+  // Milestone 190: hair_color didn't exist when appearance_json was first added above - an
+  // already-migrated row's JSON blob simply lacks the key (the GML client backfills it on
+  // load, same pattern as every other appearance back-compat case). Nothing to migrate here.
 }
