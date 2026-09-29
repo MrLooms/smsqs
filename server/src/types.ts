@@ -16,6 +16,18 @@ export interface Item {
   spd: number;
 }
 
+// Milestone 185: character customization (phase 2). Each field names one variant of that
+// layer - see appearance_options in scr_appearance.gml on the client for the valid values
+// per layer. Kept as a loose Record rather than a strict union so adding a new variant is
+// an asset-only change (no client/server type sync needed).
+export interface Appearance {
+  skin: string;
+  hair: string;
+  torso: string;
+  legs: string;
+  feet: string;
+}
+
 export interface CharacterState {
   level: number;
   xp: number;
@@ -35,7 +47,16 @@ export interface CharacterState {
   // that's where they logged out - see fetch_assigned_questions() in scr_login.gml.
   world_x: number | null;
   world_y: number | null;
+  appearance: Appearance;
 }
+
+export const DEFAULT_APPEARANCE: Appearance = {
+  skin: "light",
+  hair: "plain_auburn",
+  torso: "leather",
+  legs: "pants",
+  feet: "boots",
+};
 
 export const DEFAULT_CHARACTER: CharacterState = {
   level: 1,
@@ -51,4 +72,5 @@ export const DEFAULT_CHARACTER: CharacterState = {
   equipped_accessory: null,
   world_x: null,
   world_y: null,
+  appearance: DEFAULT_APPEARANCE,
 };

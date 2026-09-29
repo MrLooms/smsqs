@@ -207,4 +207,9 @@ export async function initDb() {
   // always dropping back in town - see project_warpstone design conversation.
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_x INTEGER");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_y INTEGER");
+  // Milestone 185: LPC character customization (phase 2) - which variant of each layer
+  // (skin/hair/torso/legs/feet) this character draws. Same opaque-JSON-blob pattern as
+  // storage_json above. Default matches the phase-1 default combo so existing characters
+  // look unchanged until they visit the wardrobe keeper.
+  await pool.query(`ALTER TABLE characters ADD COLUMN IF NOT EXISTS appearance_json TEXT NOT NULL DEFAULT '{"skin":"light","hair":"plain_auburn","torso":"leather","legs":"pants","feet":"boots"}'`);
 }

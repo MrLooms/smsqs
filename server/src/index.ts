@@ -5,7 +5,7 @@ import path from "path";
 import { initDb, dbGet, dbInsertId, dbRun } from "./db";
 import { generateToken, requireAuth, AuthedRequest } from "./auth";
 import { ah } from "./asyncHandler";
-import { CharacterState, DEFAULT_CHARACTER, Item } from "./types";
+import { CharacterState, DEFAULT_CHARACTER, DEFAULT_APPEARANCE, Item } from "./types";
 import { isUsernameAllowed } from "./usernameFilter";
 import teacherRouter from "./routes/teacher";
 import studentRouter from "./routes/student";
@@ -53,6 +53,7 @@ async function loadCharacter(userId: number): Promise<CharacterState> {
     equipped_accessory: parseItem(row.equipped_accessory_json),
     world_x: row.world_x ?? null,
     world_y: row.world_y ?? null,
+    appearance: row.appearance_json ? JSON.parse(row.appearance_json) : DEFAULT_APPEARANCE,
   };
 }
 
@@ -149,6 +150,7 @@ app.put("/api/character", requireAuth, ah(async (req: AuthedRequest, res) => {
        equipped_accessory_json = ?,
        world_x = ?,
        world_y = ?,
+       appearance_json = ?,
        updated_at = now()
      WHERE user_id = ?`,
     [
@@ -165,6 +167,7 @@ app.put("/api/character", requireAuth, ah(async (req: AuthedRequest, res) => {
       c.equipped_accessory ? JSON.stringify(c.equipped_accessory) : null,
       c.world_x ?? null,
       c.world_y ?? null,
+      JSON.stringify(c.appearance ?? DEFAULT_APPEARANCE),
       req.userId!,
     ]
   );
