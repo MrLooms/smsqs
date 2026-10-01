@@ -45,7 +45,9 @@ router.post("/register", ah(async (req, res) => {
     return res.status(400).json({ error: "A valid email address is required" });
   }
 
-  const existing = await dbGet("SELECT id FROM users WHERE username = ?", [username]);
+  // Case-insensitive, by direct request - matches the student side (index.ts) - "Bob" and "bob"
+  // are the same account now, both here and at login below.
+  const existing = await dbGet("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", [username]);
   if (existing) {
     return res.status(409).json({ error: "Username already taken" });
   }
@@ -123,7 +125,7 @@ router.post("/reset-password-with-token", ah(async (req, res) => {
 router.post("/login", ah(async (req, res) => {
   const { username, password } = req.body ?? {};
   const user = await dbGet<{ id: number; username: string; password_hash: string; role: string; is_admin: boolean }>(
-    "SELECT * FROM users WHERE username = ?",
+    "SELECT * FROM users WHERE LOWER(username) = LOWER(?)", // case-insensitive, by direct request
     [username]
   );
 
@@ -410,7 +412,7 @@ router.post("/admin/reset-password", requireAdmin, ah(async (req: AuthedRequest,
     return res.status(400).json({ error: "New password must be at least 4 characters" });
   }
 
-  const user = await dbGet<{ id: number }>("SELECT id FROM users WHERE username = ?", [username]);
+  const user = await dbGet<{ id: number }>("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", [username]); // case-insensitive, by direct request
   if (!user) return res.status(404).json({ error: "No account with that username" });
 
   await dbRun("UPDATE users SET password_hash = ? WHERE id = ?", [bcrypt.hashSync(new_password, 10), user.id]);

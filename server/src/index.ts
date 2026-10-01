@@ -85,7 +85,10 @@ app.post("/api/register", ah(async (req, res) => {
     return res.status(400).json({ error: "Password must be at least 4 characters" });
   }
 
-  const existing = await dbGet("SELECT id FROM users WHERE username = ?", [username]);
+  // Case-insensitive, by direct request - "Bob" and "bob" are the same account now, both at
+  // registration (this check) and at login (below), so a student who fat-fingers the shift key
+  // isn't locked out.
+  const existing = await dbGet("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", [username]);
   if (existing) {
     return res.status(409).json({ error: "Username already taken" });
   }
@@ -107,7 +110,7 @@ app.post("/api/register", ah(async (req, res) => {
 app.post("/api/login", ah(async (req, res) => {
   const { username, password } = req.body ?? {};
   const user = await dbGet<{ id: number; password_hash: string; role: string }>(
-    "SELECT * FROM users WHERE username = ?",
+    "SELECT * FROM users WHERE LOWER(username) = LOWER(?)", // case-insensitive, by direct request
     [username]
   );
 
