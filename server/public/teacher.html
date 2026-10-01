@@ -288,6 +288,16 @@
   </div>
   <div class="error hidden" id="reset-pw-error"></div>
   <div class="ok-msg hidden" id="reset-pw-success"></div>
+
+  <h3>Remove from Class</h3>
+  <p style="color:var(--muted); font-size:13px">
+    Removes this student from this class only - their account, characters, and any other
+    classes they're in are untouched. They can rejoin later with the class code if needed.
+  </p>
+  <div class="row">
+    <button class="danger" id="btn-remove-student">Remove from Class</button>
+  </div>
+  <div class="error hidden" id="remove-student-error"></div>
 </section>
 
 <!-- QUESTION SET EDITOR VIEW -->
@@ -680,6 +690,18 @@ document.getElementById("btn-reset-password").onclick = async () => {
     successEl.classList.remove("hidden");
   } catch (e) {
     setError("reset-pw-error", e.message);
+  }
+};
+
+document.getElementById("btn-remove-student").onclick = async () => {
+  setError("remove-student-error", "");
+  const name = document.getElementById("student-detail-name").textContent;
+  if (!confirm(`Remove ${name} from this class? They can rejoin later with the class code.`)) return;
+  try {
+    await api("DELETE", `/api/teacher/classes/${currentClassId}/students/${currentStudentId}`);
+    openClass(currentClassId);
+  } catch (e) {
+    setError("remove-student-error", e.message);
   }
 };
 

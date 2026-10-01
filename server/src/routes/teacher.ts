@@ -334,6 +334,47 @@ router.post("/classes/:id/students/:studentId/reset-password", ah(async (req: Au
   res.json({ ok: true });
 }));
 
+// Milestone 233: lets a teacher remove a student from their own class (roster management - a
+// student who left the school, was added by mistake, etc.) - same class-ownership scoping as
+// every other per-student route above. Only removes the ONE membership row, same as the
+// student's own self-serve leave (POST /api/classes/:id/leave, student.ts) - the account itself,
+// its characters, and its other class memberships are untouched. Same active_class_id fallback
+// logic as that route too: if this class happened to be the student's active one, they fall back
+// to their next most-recently-joined remaining membership, or null (practice-questions mode) if
+// this was their last one.
+router.delete("/classes/:id/students/:studentId", ah(async (req: AuthedRequest, res) => {
+  const classId = Number(req.params.id);
+  const studentId = Number(req.params.studentId);
+
+  const cls = await dbGet<{ id: number }>(
+    "SELECT id FROM classes WHERE id = ? AND teacher_id = ?",
+    [classId, req.userId!]
+  );
+  if (!cls) return res.status(404).json({ error: "Class not found" });
+
+  const member = await dbGet(
+    "SELECT student_id FROM class_members WHERE class_id = ? AND student_id = ?",
+    [classId, studentId]
+  );
+  if (!member) return res.status(404).json({ error: "Student not found in this class" });
+
+  await dbRun("DELETE FROM class_members WHERE class_id = ? AND student_id = ?", [classId, studentId]);
+
+  const activeClass = await dbGet<{ active_class_id: number | null }>(
+    "SELECT active_class_id FROM users WHERE id = ?",
+    [studentId]
+  );
+  if (activeClass?.active_class_id === classId) {
+    const next = await dbGet<{ class_id: number }>(
+      "SELECT class_id FROM class_members WHERE student_id = ? ORDER BY joined_at DESC LIMIT 1",
+      [studentId]
+    );
+    await dbRun("UPDATE users SET active_class_id = ? WHERE id = ?", [next?.class_id ?? null, studentId]);
+  }
+
+  res.json({ ok: true });
+}));
+
 // Milestone 171 (was M170's "/students/unassigned/reset-password"): the M100 route above only
 // reaches a student in one of THIS teacher's own classes - a student who registered but never
 // joined any class had no recovery path at all. The first version of this fix let ANY teacher
