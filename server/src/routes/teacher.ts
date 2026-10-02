@@ -448,6 +448,58 @@ router.get("/admin/accounts", requireAdmin, ah(async (req: AuthedRequest, res) =
   res.json({ accounts });
 }));
 
+// Admin-only account deletion, by direct request. Permanent: removes the account and everything
+// that hangs off it, in one transaction so a failure part-way can't leave half an account behind.
+//  - any account: sessions, password-reset tokens, character/save, dungeon runs, question attempts,
+//    class memberships (as a student), then the user row itself
+//  - a TEACHER additionally takes everything they own with them: their classes (and those classes'
+//    memberships/assignments - students whose active class was one of them fall back to "no active
+//    class"), their question sets and every question in them
+// Guards: an admin account can't be deleted (this also covers deleting yourself), and the body must
+// repeat the target's username ("confirm_username") so a stray click or a stale list row can't
+// delete the wrong account - the dashboard's confirm prompt sends it.
+router.delete("/admin/accounts/:id", requireAdmin, ah(async (req: AuthedRequest, res) => {
+  const targetId = Number(req.params.id);
+  if (!Number.isInteger(targetId)) return res.status(400).json({ error: "Invalid account id" });
+
+  const target = await dbGet<{ id: number; username: string; role: string; is_admin: boolean }>(
+    "SELECT id, username, role, is_admin FROM users WHERE id = ?",
+    [targetId]
+  );
+  if (!target) return res.status(404).json({ error: "No such account" });
+  if (target.is_admin || target.id === req.userId) {
+    return res.status(403).json({ error: "Admin accounts can't be deleted" });
+  }
+
+  const confirm = req.body?.confirm_username;
+  if (typeof confirm !== "string" || confirm.trim().toLowerCase() !== target.username.toLowerCase()) {
+    return res.status(400).json({ error: "Confirmation username doesn't match" });
+  }
+
+  await withTransaction(async (query) => {
+    if (target.role === "teacher") {
+      await query("UPDATE users SET active_class_id = NULL WHERE active_class_id IN (SELECT id FROM classes WHERE teacher_id = ?)", [targetId]);
+      await query("DELETE FROM class_members WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = ?)", [targetId]);
+      await query(
+        "DELETE FROM class_assignments WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = ?) OR question_set_id IN (SELECT id FROM question_sets WHERE teacher_id = ?)",
+        [targetId, targetId]
+      );
+      await query("DELETE FROM classes WHERE teacher_id = ?", [targetId]);
+      await query("DELETE FROM questions WHERE question_set_id IN (SELECT id FROM question_sets WHERE teacher_id = ?)", [targetId]);
+      await query("DELETE FROM question_sets WHERE teacher_id = ?", [targetId]);
+    }
+    await query("DELETE FROM sessions WHERE user_id = ?", [targetId]);
+    await query("DELETE FROM password_reset_tokens WHERE user_id = ?", [targetId]);
+    await query("DELETE FROM dungeon_runs WHERE user_id = ?", [targetId]);
+    await query("DELETE FROM question_attempts WHERE student_id = ?", [targetId]);
+    await query("DELETE FROM class_members WHERE student_id = ?", [targetId]);
+    await query("DELETE FROM characters WHERE user_id = ?", [targetId]);
+    await query("DELETE FROM users WHERE id = ?", [targetId]);
+  });
+
+  res.json({ ok: true, deleted: target.username });
+}));
+
 router.post("/classes/:id/assign", ah(async (req: AuthedRequest, res) => {
   const classId = Number(req.params.id);
   const { question_set_id } = req.body ?? {};

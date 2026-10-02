@@ -770,6 +770,15 @@ async function refreshAdminAccounts() {
       tdType.textContent = typeLabel;
       const tdAction = document.createElement("td");
       tdAction.appendChild(genBtn);
+      // Delete (admin accounts can't be deleted - the server refuses too).
+      if (!acc.is_admin) {
+        const delBtn = document.createElement("button");
+        delBtn.className = "danger";
+        delBtn.style.marginLeft = "8px";
+        delBtn.textContent = "Delete";
+        delBtn.onclick = () => deleteAccount(acc);
+        tdAction.appendChild(delBtn);
+      }
       tr.append(tdUser, tdType, tdAction);
       tbody.appendChild(tr);
     });
@@ -785,6 +794,28 @@ async function generateAccountPassword(accUsername) {
     const successEl = document.getElementById("admin-generate-success");
     successEl.textContent = `New password for ${accUsername}: ${data.new_password}  (write this down - it won't be shown again)`;
     successEl.classList.remove("hidden");
+  } catch (e) {
+    setError("admin-accounts-error", e.message);
+  }
+}
+
+// Permanent. Makes you type the username back so a mis-click on the wrong row can't delete anyone;
+// a teacher account also removes their classes and question sets (the warning says so).
+async function deleteAccount(acc) {
+  const extra = acc.role === "teacher"
+    ? "\n\nThis is a TEACHER account: their classes, question sets and questions are deleted too, and their students are removed from those classes."
+    : "";
+  const typed = prompt(`Permanently delete "${acc.username}" and their character, progress and history? This cannot be undone.${extra}\n\nType the username to confirm:`);
+  if (typed === null) return;
+  if (typed.trim().toLowerCase() !== acc.username.toLowerCase()) {
+    return setError("admin-accounts-error", "Username didn't match - nothing was deleted.");
+  }
+  try {
+    await api("DELETE", `/api/teacher/admin/accounts/${acc.id}`, { confirm_username: typed.trim() });
+    const successEl = document.getElementById("admin-generate-success");
+    successEl.textContent = `Deleted account ${acc.username}.`;
+    successEl.classList.remove("hidden");
+    refreshAdminAccounts();
   } catch (e) {
     setError("admin-accounts-error", e.message);
   }
