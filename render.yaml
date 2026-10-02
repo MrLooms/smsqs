@@ -3,7 +3,9 @@
 # service creation by hand. See server/README.md for what this service does.
 databases:
   - name: sms-quest-db
-    plan: free
+    # Upgraded from free (the free Postgres expires after ~30 days and is then deleted):
+    # $6/month, 0.1 CPU, 256 MB RAM. Render renamed this plan: "0.1c-256mb" (was "basic-256mb").
+    plan: "0.1c-256mb"
 
 services:
   - type: web
