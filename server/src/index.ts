@@ -7,7 +7,7 @@ import { generateToken, requireAuth, AuthedRequest } from "./auth";
 import { ah } from "./asyncHandler";
 import { CharacterState, DEFAULT_CHARACTER, DEFAULT_APPEARANCE, Item } from "./types";
 import { isUsernameAllowed } from "./usernameFilter";
-import { parseState as parseLorekin, toClient as lorekinToClient } from "./lorekin";
+import { parseState as parseLorekin, toClient as lorekinToClient, fillAllSpecies } from "./lorekin";
 import teacherRouter from "./routes/teacher";
 import studentRouter from "./routes/student";
 import { attachMultiplayer } from "./ws";
@@ -40,6 +40,14 @@ function parseItem(json: string | null): Item | null {
 async function loadCharacter(userId: number): Promise<CharacterState> {
   const row = await dbGet<any>("SELECT * FROM characters WHERE user_id = ?", [userId]);
 
+  // Milestone 257: the "test" account (the one the game's debug keys are limited to) always owns one of
+  // every Lorekin species - topped up here on every login, saved if it added anything.
+  const lk = parseLorekin(row.lorekin_json);
+  const who = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [userId]);
+  if (who && who.username.toLowerCase() === "test" && fillAllSpecies(lk)) {
+    await dbRun("UPDATE characters SET lorekin_json = ? WHERE user_id = ?", [JSON.stringify(lk), userId]);
+  }
+
   return {
     level: row.level,
     xp: row.xp,
@@ -55,7 +63,7 @@ async function loadCharacter(userId: number): Promise<CharacterState> {
     world_x: row.world_x ?? null,
     world_y: row.world_y ?? null,
     appearance: row.appearance_json ? JSON.parse(row.appearance_json) : DEFAULT_APPEARANCE,
-    lorekin: lorekinToClient(parseLorekin(row.lorekin_json)),
+    lorekin: lorekinToClient(lk),
   };
 }
 

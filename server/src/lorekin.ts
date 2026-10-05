@@ -84,3 +84,19 @@ export function cleanName(raw: unknown): string | null {
   if (s.length < 1 || s.length > MAX_NAME_LEN) return null;
   return s;
 }
+
+// Testing aid: make sure a state holds at least one of EVERY species (used for the "test" account on
+// login). Returns true if it added anything. Never removes or renames what's there.
+export function fillAllSpecies(st: LorekinState): boolean {
+  let changed = false;
+  for (const pool of SPECIES_BY_RARITY) {
+    for (const species of pool) {
+      if (st.list.some((e) => e.species === species)) continue;
+      st.list.push({ id: st.next_id, species, name: DEFAULT_NAMES[species] ?? species });
+      st.next_id += 1;
+      changed = true;
+    }
+  }
+  if (changed && st.active == null && st.list.length > 0) st.active = st.list[0].id;
+  return changed;
+}
