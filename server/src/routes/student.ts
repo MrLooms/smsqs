@@ -284,4 +284,65 @@ router.get("/my-leaderboard", requireAuth, requireRole("student"), ah(async (req
   res.json({ has_class: true, class_name: cls!.name, leaderboard });
 }));
 
+// Milestone 255: the Endless Dungeon. The game calls /endless/start when a run begins (resets the
+// run's counter) and /endless/complete once per dungeon beaten; the server does the counting
+// rather than trusting a client-sent total, and refuses completions closer together than
+// MIN_ENDLESS_GAP_S (a real dungeon - ~10 rooms, a boss - can't be cleared faster), so the number
+// can't be inflated by simply POSTing a big value or hammering the route. A determined student can
+// still fake completions slowly (same trust level as the rest of the client-saved game), but not
+// cheaply or instantly.
+const MIN_ENDLESS_GAP_S = 90;
+
+router.post("/endless/start", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  await dbRun("UPDATE users SET endless_current = 0 WHERE id = ?", [req.userId!]);
+  res.json({ ok: true });
+}));
+
+router.post("/endless/complete", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const row = await dbGet<{ endless_current: number; endless_best: number; secs: number | null }>(
+    `SELECT endless_current, endless_best,
+       EXTRACT(EPOCH FROM (now() - endless_last_complete))::float AS secs
+     FROM users WHERE id = ?`,
+    [req.userId!]
+  );
+  if (!row) return res.status(404).json({ error: "No such account" });
+  if (row.secs != null && row.secs < MIN_ENDLESS_GAP_S) {
+    return res.json({ ok: false, reason: "too_fast", streak: row.endless_current, best: row.endless_best });
+  }
+  const streak = row.endless_current + 1;
+  const best = Math.max(row.endless_best, streak);
+  await dbRun(
+    "UPDATE users SET endless_current = ?, endless_best = ?, endless_last_complete = now() WHERE id = ?",
+    [streak, best, req.userId!]
+  );
+  res.json({ ok: true, streak, best });
+}));
+
+// Class-scoped, like /my-leaderboard: the active class's top 5 by best run, only students who've
+// completed at least one endless dungeon. Plus the caller's own best, so the panel can show it
+// even when they're outside the top 5.
+router.get("/my-endless-leaderboard", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const activeClassId = await getActiveClassId(req.userId!);
+  const me = await dbGet<{ endless_best: number }>("SELECT endless_best FROM users WHERE id = ?", [req.userId!]);
+  if (!activeClassId) {
+    return res.json({ has_class: false, my_best: me?.endless_best ?? 0 });
+  }
+  const cls = await dbGet<{ name: string }>("SELECT name FROM classes WHERE id = ?", [activeClassId]);
+  const rows = await dbAll<{ username: string; endless_best: number }>(
+    `SELECT u.username AS username, u.endless_best AS endless_best
+     FROM class_members cm
+     JOIN users u ON u.id = cm.student_id
+     WHERE cm.class_id = ? AND u.endless_best > 0
+     ORDER BY u.endless_best DESC, u.username ASC
+     LIMIT 5`,
+    [activeClassId]
+  );
+  res.json({
+    has_class: true,
+    class_name: cls!.name,
+    my_best: me?.endless_best ?? 0,
+    leaderboard: rows.map((r) => ({ username: r.username, best: r.endless_best })),
+  });
+}));
+
 export default router;

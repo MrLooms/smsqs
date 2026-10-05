@@ -205,6 +205,13 @@ export async function initDb() {
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS storage_json TEXT NOT NULL DEFAULT '[]'");
   // Milestone 166: last known overworld cell, for resuming there on next login instead of
   // always dropping back in town - see project_warpstone design conversation.
+  // Milestone 255: the Endless Dungeon leaderboard. `endless_current` is the run in progress
+  // (reset by /endless/start, +1 per /endless/complete), `endless_best` the best any run has
+  // reached, `endless_last_complete` rate-limits completions (see routes/student.ts). Per USER, not
+  // per class - the class-scoped leaderboard just reads these for its members.
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS endless_current INTEGER NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS endless_best INTEGER NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS endless_last_complete TIMESTAMPTZ");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_x INTEGER");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_y INTEGER");
   // Milestone 185: LPC character customization (phase 2) - which variant of each layer
