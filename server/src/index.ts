@@ -7,6 +7,7 @@ import { generateToken, requireAuth, AuthedRequest } from "./auth";
 import { ah } from "./asyncHandler";
 import { CharacterState, DEFAULT_CHARACTER, DEFAULT_APPEARANCE, Item } from "./types";
 import { isUsernameAllowed } from "./usernameFilter";
+import { parseState as parseLorekin, toClient as lorekinToClient } from "./lorekin";
 import teacherRouter from "./routes/teacher";
 import studentRouter from "./routes/student";
 import { attachMultiplayer } from "./ws";
@@ -54,6 +55,7 @@ async function loadCharacter(userId: number): Promise<CharacterState> {
     world_x: row.world_x ?? null,
     world_y: row.world_y ?? null,
     appearance: row.appearance_json ? JSON.parse(row.appearance_json) : DEFAULT_APPEARANCE,
+    lorekin: lorekinToClient(parseLorekin(row.lorekin_json)),
   };
 }
 

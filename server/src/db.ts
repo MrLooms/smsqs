@@ -212,6 +212,9 @@ export async function initDb() {
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS endless_current INTEGER NOT NULL DEFAULT 0");
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS endless_best INTEGER NOT NULL DEFAULT 0");
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS endless_last_complete TIMESTAMPTZ");
+  // Milestone 256: Lorekin (pets) - collection, active one and egg incubator, as one opaque JSON
+  // blob (see lorekin.ts). Changed only through the /api/lorekin/* routes, never the character PUT.
+  await pool.query(`ALTER TABLE characters ADD COLUMN IF NOT EXISTS lorekin_json TEXT NOT NULL DEFAULT '{"list":[],"active":null,"next_id":1,"incubator":null}'`);
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_x INTEGER");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_y INTEGER");
   // Milestone 185: LPC character customization (phase 2) - which variant of each layer

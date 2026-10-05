@@ -1,5 +1,10 @@
 import { Router } from "express";
-import { dbGet, dbAll, dbRun } from "../db";
+import { dbGet, dbAll, dbRun, withTransaction } from "../db";
+import { isUsernameAllowed } from "../usernameFilter";
+import {
+  LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
+  DEFAULT_NAMES, INCUBATE_MS, BOOST_MS, MAX_COLLECTION,
+} from "../lorekin";
 import { requireAuth, requireRole, AuthedRequest } from "../auth";
 import { ah } from "../asyncHandler";
 
@@ -343,6 +348,95 @@ router.get("/my-endless-leaderboard", requireAuth, requireRole("student"), ah(as
     my_best: me?.endless_best ?? 0,
     leaderboard: rows.map((r) => ({ username: r.username, best: r.endless_best })),
   });
+}));
+
+// Milestone 256: Lorekin (pets). Everything goes through lorekinMutate: it locks the character
+// row, lets the handler change the parsed state (or return an error string without saving), and
+// writes it back - so two quick requests (a double-clicked button, or two devices) can never both
+// act on the same stale copy. The client only ever receives lorekinToClient()'s view of the state,
+// with the incubator as "seconds left".
+async function lorekinMutate(
+  userId: number,
+  fn: (st: LorekinState) => string | void
+): Promise<{ error?: string; state: ReturnType<typeof lorekinToClient> }> {
+  return withTransaction(async (query) => {
+    const r = await query("SELECT lorekin_json FROM characters WHERE user_id = ? FOR UPDATE", [userId]);
+    const st = parseLorekin(r.rows[0]?.lorekin_json);
+    const err = fn(st);
+    if (err) return { error: err, state: lorekinToClient(st) };
+    await query("UPDATE characters SET lorekin_json = ? WHERE user_id = ?", [JSON.stringify(st), userId]);
+    return { state: lorekinToClient(st) };
+  });
+}
+
+router.get("/lorekin", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const r = await dbGet<{ lorekin_json: string }>("SELECT lorekin_json FROM characters WHERE user_id = ?", [req.userId!]);
+  res.json({ lorekin: lorekinToClient(parseLorekin(r?.lorekin_json)) });
+}));
+
+router.post("/lorekin/incubate", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const rarity = Number(req.body?.rarity);
+  if (!Number.isInteger(rarity) || rarity < 0 || rarity > 3) return res.json({ ok: false, error: "Bad egg rarity" });
+  const out = await lorekinMutate(req.userId!, (st) => {
+    if (st.incubator) return "Something is already incubating";
+    if (st.list.length >= MAX_COLLECTION) return "Your Lorekin collection is full";
+    st.incubator = { rarity, ready_at: Date.now() + INCUBATE_MS };
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
+  res.json({ ok: true, lorekin: out.state });
+}));
+
+// One Knowledge Crystal charge (spent by the client AFTER this succeeds) takes BOOST_MS off the wait.
+router.post("/lorekin/boost", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const out = await lorekinMutate(req.userId!, (st) => {
+    if (!st.incubator) return "Nothing is incubating";
+    if (st.incubator.ready_at <= Date.now()) return "Already ready to hatch";
+    st.incubator.ready_at -= BOOST_MS;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
+  res.json({ ok: true, lorekin: out.state });
+}));
+
+router.post("/lorekin/hatch", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  let hatched: { id: number; species: string; name: string } | null = null;
+  const out = await lorekinMutate(req.userId!, (st) => {
+    if (!st.incubator) return "Nothing is incubating";
+    if (st.incubator.ready_at > Date.now()) return "Not ready yet";
+    if (st.list.length >= MAX_COLLECTION) return "Your Lorekin collection is full";
+    const species = pickSpecies(st.incubator.rarity);
+    hatched = { id: st.next_id, species, name: DEFAULT_NAMES[species] ?? species };
+    st.next_id += 1;
+    st.list.push(hatched);
+    if (st.active == null) st.active = hatched.id; // the first one hatched starts out as your companion
+    st.incubator = null;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
+  res.json({ ok: true, hatched, lorekin: out.state });
+}));
+
+router.post("/lorekin/rename", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const id = Number(req.body?.id);
+  const name = cleanName(req.body?.name);
+  if (!name) return res.json({ ok: false, error: "Names are 1-14 letters, numbers, spaces, - or '" });
+  if (!isUsernameAllowed(name)) return res.json({ ok: false, error: "That name isn't allowed" });
+  const out = await lorekinMutate(req.userId!, (st) => {
+    const e = st.list.find((x) => x.id === id);
+    if (!e) return "No such Lorekin";
+    e.name = name;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
+  res.json({ ok: true, lorekin: out.state });
+}));
+
+router.post("/lorekin/active", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const raw = req.body?.id;
+  const id = raw == null ? null : Number(raw);
+  const out = await lorekinMutate(req.userId!, (st) => {
+    if (id != null && !st.list.some((x) => x.id === id)) return "No such Lorekin";
+    st.active = id;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
+  res.json({ ok: true, lorekin: out.state });
 }));
 
 export default router;
