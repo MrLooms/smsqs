@@ -439,4 +439,17 @@ router.post("/lorekin/active", requireAuth, requireRole("student"), ah(async (re
   res.json({ ok: true, lorekin: out.state });
 }));
 
+// Testing aid: the account named "test" (the same one the game's debug keys are limited to) can finish
+// its incubator instantly, since waiting 24 real hours to test a hatch is no use to anyone.
+router.post("/lorekin/debug_ready", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const u = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [req.userId!]);
+  if (!u || u.username.toLowerCase() !== "test") return res.json({ ok: false, error: "Not available" });
+  const out = await lorekinMutate(req.userId!, (st) => {
+    if (!st.incubator) return "Nothing is incubating";
+    st.incubator.ready_at = Date.now() - 1000;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
+  res.json({ ok: true, lorekin: out.state });
+}));
+
 export default router;
