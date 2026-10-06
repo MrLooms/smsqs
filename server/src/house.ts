@@ -39,6 +39,11 @@ export const MAX_OWNED_PER_ITEM = 99;
 
 export const DEFAULT_CHEST = { x: 570, y: 150 };
 
+// Milestone 272: partitions ("wall_*") are free for everyone: unlimited, never bought, and they don't use up the
+// house's piece cap - they have a cap of their own so a layout stays a sane size.
+export const MAX_PARTITIONS = 150;
+export const isFreeItem = (id: string) => id.startsWith("wall_");
+
 export function defaultHouse(): HouseState {
   return { tier: 0, floor: "stone_brown", wall: "brick", owned: {}, placed: [], chest: { ...DEFAULT_CHEST }, v: 2 };
 }
@@ -72,6 +77,7 @@ export function parseHouse(json: string | null | undefined, isTest: boolean): { 
   if (isTest) {
     // the "test" account owns plenty of everything, always
     for (const id of HOUSE_ITEM_IDS) {
+      if (isFreeItem(id)) continue;
       if ((s.owned[id] ?? 0) < 10) { s.owned[id] = 10; changed = true; }
     }
   }
@@ -83,9 +89,10 @@ export function parseHouse(json: string | null | undefined, isTest: boolean): { 
 export function cleanPlaced(s: HouseState, raw: unknown): Placed[] | string {
   if (!Array.isArray(raw)) return "Bad layout";
   const t = TIERS[s.tier];
-  if (raw.length > t.max) return "Too many pieces for this house";
   const out: Placed[] = [];
   const used: Record<string, number> = {};
+  let pieces = 0;
+  let partitions = 0;
   for (const r of raw) {
     if (!r || typeof r.item !== "string" || !ITEM_SET.has(r.item)) return "Unknown furniture";
     const x = Math.round(Number(r.x));
@@ -93,7 +100,14 @@ export function cleanPlaced(s: HouseState, raw: unknown): Placed[] | string {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return "Bad position";
     if (x < 20 || x > t.w - 20 || y < 60 || y > t.h - 20) return "A piece is outside the room";
     used[r.item] = (used[r.item] ?? 0) + 1;
-    if (used[r.item] > (s.owned[r.item] ?? 0)) return "You don't own that many";
+    if (isFreeItem(r.item)) {
+      partitions += 1;
+      if (partitions > MAX_PARTITIONS) return "That's a lot of walls - the most you can build is " + MAX_PARTITIONS;
+    } else {
+      pieces += 1;
+      if (pieces > t.max) return "Too many pieces for this house";
+      if (used[r.item] > (s.owned[r.item] ?? 0)) return "You don't own that many";
+    }
     out.push({ item: r.item, x, y, flip: r.flip ? 1 : 0 });
   }
   return out;

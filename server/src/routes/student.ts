@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { dbGet, dbAll, dbRun, withTransaction } from "../db";
 import { isUsernameAllowed } from "../usernameFilter";
-import { HouseState, parseHouse, cleanPlaced, cleanChest, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM } from "../house";
+import { HouseState, parseHouse, cleanPlaced, cleanChest, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM, isFreeItem } from "../house";
 import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import { inSameParty } from "../party";
 import {
@@ -503,6 +503,7 @@ router.post("/house/buy", requireAuth, requireRole("student"), ah(async (req: Au
   const item = String(req.body?.item ?? "");
   const out = await houseMutate(req.userId!, (st) => {
     if (!HOUSE_ITEM_IDS.includes(item)) return "Unknown furniture";
+    if (isFreeItem(item)) return "Walls are free - just place them";
     if ((st.owned[item] ?? 0) >= MAX_OWNED_PER_ITEM) return "You already own plenty of those";
     st.owned[item] = (st.owned[item] ?? 0) + 1;
   });
@@ -538,7 +539,9 @@ router.post("/house/debug_tier", requireAuth, requireRole("student"), ah(async (
   const out = await houseMutate(req.userId!, (st) => {
     st.tier = (st.tier + 1) % TIERS.length;
     const t = TIERS[st.tier];
-    st.placed = st.placed.filter((p) => p.x >= 20 && p.x <= t.w - 20 && p.y >= 60 && p.y <= t.h - 20).slice(0, t.max);
+    const fits = st.placed.filter((p) => p.x >= 20 && p.x <= t.w - 20 && p.y >= 60 && p.y <= t.h - 20);
+    let kept = 0;
+    st.placed = fits.filter((p) => isFreeItem(p.item) || ++kept <= t.max); // partitions don't use the piece cap
     if (st.chest.x > t.w - 20 || st.chest.y > t.h - 20) st.chest = { x: Math.min(st.chest.x, t.w - 70), y: Math.min(st.chest.y, 150) };
   });
   if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
