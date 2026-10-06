@@ -179,20 +179,9 @@ router.get("/my-accuracy", requireAuth, requireRole("student"), ah(async (req: A
   res.json({ attempts: totals!.attempts, correct: totals!.correct_count, by_topic: byTopic });
 }));
 
-// Milestone 11: Class Town. A single shared structure (deliberately just
-// one, not the spec's full blacksmith/library/shop/raid-hall - those need
-// their own gameplay systems, e.g. something to actually buy, that don't
-// exist yet) that visually advances through tiers as the whole class
-// racks up correct answers. Thresholds are small on purpose so a
-// real class can reach later tiers within a normal testing session -
-// tune upward once this has been played with real numbers of students.
-const CASTLE_TIERS = [
-  { name: "Ruins", threshold: 0 },
-  { name: "Foundations", threshold: 50 },
-  { name: "Walls Rising", threshold: 150 },
-  { name: "Towers Complete", threshold: 300 },
-  { name: "The Grand Castle", threshold: 500 },
-];
+// Milestone 11: Class Town; reworked (Milestone 269) from five fixed tiers into an endless tower. A single
+// shared structure that gains one level for every CASTLE_LEVEL_STEP correct answers the whole class has racked up.
+const CASTLE_LEVEL_STEP = 50;
 
 router.get("/my-class-progress", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
   const activeClassId = await getActiveClassId(req.userId!);
@@ -207,19 +196,17 @@ router.get("/my-class-progress", requireAuth, requireRole("student"), ah(async (
     [activeClassId]
   );
 
-  let tierIndex = 0;
-  for (let i = 0; i < CASTLE_TIERS.length; i++) {
-    if (row!.total_correct >= CASTLE_TIERS[i].threshold) tierIndex = i;
-  }
-  const nextThreshold = tierIndex + 1 < CASTLE_TIERS.length ? CASTLE_TIERS[tierIndex + 1].threshold : null;
+  const level = Math.floor(row!.total_correct / CASTLE_LEVEL_STEP);
 
   res.json({
     has_class: true,
     class_name: cls!.name,
     total_correct: row!.total_correct,
-    tier_index: tierIndex,
-    tier_name: CASTLE_TIERS[tierIndex].name,
-    next_threshold: nextThreshold,
+    level,
+    next_threshold: (level + 1) * CASTLE_LEVEL_STEP,
+    // kept so older clients still read something sensible
+    tier_index: Math.min(level, 4),
+    tier_name: "Level " + level,
   });
 }));
 
