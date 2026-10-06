@@ -4,6 +4,8 @@
 import { HOUSE_ITEM_IDS } from "./houseCatalog";
 
 export const FLOORS = ["stone_brown", "brick_red", "stone_grey", "checker_tan"];
+// wall paint (the client tints the brick wall face): see interior_wall_color in scr_interiors.gml
+export const WALLS = ["brick", "slate", "sand", "moss", "plum"];
 
 // Interior size (px) and how many pieces fit, by house tier. The client mirrors w/h (home_tier_info).
 export const TIERS = [
@@ -22,6 +24,7 @@ export interface Placed {
 export interface HouseState {
   tier: number;
   floor: string;
+  wall: string;
   owned: Record<string, number>;
   placed: Placed[];
   v: number; // layout version; < 2 means the short-lived starter pack was granted - cleared on first read
@@ -34,7 +37,7 @@ const ITEM_SET = new Set(HOUSE_ITEM_IDS);
 export const MAX_OWNED_PER_ITEM = 99;
 
 export function defaultHouse(): HouseState {
-  return { tier: 0, floor: "stone_brown", owned: {}, placed: [], v: 2 };
+  return { tier: 0, floor: "stone_brown", wall: "brick", owned: {}, placed: [], v: 2 };
 }
 
 // Returns the parsed state and whether parsing had to ADD something (the starter pack, the test
@@ -46,6 +49,7 @@ export function parseHouse(json: string | null | undefined, isTest: boolean): { 
     s = {
       tier: Number.isInteger(p.tier) && p.tier >= 0 && p.tier < TIERS.length ? p.tier : 0,
       floor: FLOORS.includes(p.floor) ? p.floor : "stone_brown",
+      wall: WALLS.includes(p.wall) ? p.wall : "brick",
       owned: p.owned && typeof p.owned === "object" ? p.owned : {},
       placed: Array.isArray(p.placed) ? p.placed : [],
       v: Number.isInteger(p.v) ? p.v : 1,
@@ -93,5 +97,5 @@ export function cleanPlaced(s: HouseState, raw: unknown): Placed[] | string {
 }
 
 export function houseToClient(s: HouseState) {
-  return { tier: s.tier, floor: s.floor, owned: s.owned, placed: s.placed, max: TIERS[s.tier].max, w: TIERS[s.tier].w, h: TIERS[s.tier].h };
+  return { tier: s.tier, floor: s.floor, wall: s.wall, owned: s.owned, placed: s.placed, max: TIERS[s.tier].max, w: TIERS[s.tier].w, h: TIERS[s.tier].h };
 }

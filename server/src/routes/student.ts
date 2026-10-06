@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { dbGet, dbAll, dbRun, withTransaction } from "../db";
 import { isUsernameAllowed } from "../usernameFilter";
-import { HouseState, parseHouse, cleanPlaced, houseToClient, FLOORS, MAX_OWNED_PER_ITEM } from "../house";
+import { HouseState, parseHouse, cleanPlaced, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM } from "../house";
 import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
@@ -509,6 +509,26 @@ router.post("/house/buy", requireAuth, requireRole("student"), ah(async (req: Au
     if (!HOUSE_ITEM_IDS.includes(item)) return "Unknown furniture";
     if ((st.owned[item] ?? 0) >= MAX_OWNED_PER_ITEM) return "You already own plenty of those";
     st.owned[item] = (st.owned[item] ?? 0) + 1;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
+  res.json({ ok: true, house: out.state });
+}));
+
+router.post("/house/wall", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const wall = String(req.body?.wall ?? "");
+  const out = await houseMutate(req.userId!, (st) => {
+    if (!WALLS.includes(wall)) return "Unknown wall";
+    st.wall = wall;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
+  res.json({ ok: true, house: out.state });
+}));
+
+// One size bigger (Cottage -> House -> Manor). The game checks and spends the gold itself, calling this FIRST.
+router.post("/house/upgrade", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const out = await houseMutate(req.userId!, (st) => {
+    if (st.tier >= TIERS.length - 1) return "Your home is already the biggest it can be";
+    st.tier += 1;
   });
   if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
   res.json({ ok: true, house: out.state });
