@@ -108,7 +108,10 @@ export function joinParty(
 ): { party: Party } | { error: string } {
   const party = parties.get(code.trim().toUpperCase());
   if (!party) return { error: "No party with that code" };
-  if (party.members.size >= MAX_PARTY_SIZE) return { error: "That party is full" };
+  // the "test" account has no party size limit: a party it hosts takes anyone, and it can join a full one
+  const isTest = (u: string | undefined) => u?.toLowerCase() === "test";
+  const host = party.members.get(party.hostConnId);
+  if (party.members.size >= MAX_PARTY_SIZE && !isTest(host?.username) && !isTest(username)) return { error: "That party is full" };
 
   leaveParty(connId);
   party.members.set(connId, { connId, userId, username, x: 0, y: 0, facing: 0, roomKey: "", roomAsset: "", roomSince: 0 });
