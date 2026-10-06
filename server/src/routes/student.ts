@@ -561,27 +561,8 @@ router.post("/house/debug_tier", requireAuth, requireRole("student"), ah(async (
 // the owner change a house.
 async function houseAccess(me: number, owner: number): Promise<boolean> {
   if (me === owner) return true;
-  const shared = await dbGet(
-    "SELECT 1 AS x FROM class_members a JOIN class_members b ON a.class_id = b.class_id WHERE a.student_id = ? AND b.student_id = ? LIMIT 1",
-    [me, owner]
-  );
-  if (shared) return true;
   return inSameParty(me, owner);
 }
-
-// Classmates (anyone sharing a class with you) and the size of their home - the Neighborhood board's list.
-router.get("/house/neighbors", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
-  const rows = await dbAll<{ username: string; house_json: string }>(
-    `SELECT DISTINCT u.username AS username, c.house_json AS house_json
-     FROM class_members me JOIN class_members o ON o.class_id = me.class_id AND o.student_id <> me.student_id
-     JOIN users u ON u.id = o.student_id JOIN characters c ON c.user_id = u.id
-     WHERE me.student_id = ? ORDER BY u.username LIMIT 80`,
-    [req.userId!]
-  );
-  res.json({
-    neighbors: rows.map((r) => ({ username: r.username, tier: parseHouse(r.house_json, false).state.tier })),
-  });
-}));
 
 // Another player's home plus the numbers its Trophy Board shows.
 router.get("/house/of/:username", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
@@ -590,7 +571,7 @@ router.get("/house/of/:username", requireAuth, requireRole("student"), ah(async 
     [String(req.params.username ?? "")]
   );
   if (!owner) return res.json({ ok: false, error: "No such player" });
-  if (!(await houseAccess(req.userId!, owner.id))) return res.json({ ok: false, error: "You can only visit classmates and party members" });
+  if (!(await houseAccess(req.userId!, owner.id))) return res.json({ ok: false, error: "You can only see the homes of players in your party" });
   const c = await dbGet<{ house_json: string; level: number; inventory_json: string; lorekin_json: string }>(
     "SELECT house_json, level, inventory_json, lorekin_json FROM characters WHERE user_id = ?",
     [owner.id]

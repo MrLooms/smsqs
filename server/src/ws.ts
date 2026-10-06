@@ -91,7 +91,7 @@ export function attachMultiplayer(server: HttpServer) {
 
       if (msg.t === "create") {
         const party = createParty(state.connId, state.userId, state.username);
-        return send({ t: "party_ok", code: party.code, host: true, members: rosterOf(party) });
+        return send({ t: "party_ok", code: party.code, host: true, host_id: party.hostConnId, members: rosterOf(party) });
       }
 
       if (msg.t === "join") {
@@ -99,7 +99,7 @@ export function attachMultiplayer(server: HttpServer) {
         const result = joinParty(state.connId, state.userId, state.username, msg.code);
         if ("error" in result) return send({ t: "party_err", error: result.error });
 
-        send({ t: "party_ok", code: result.party.code, host: result.party.hostConnId === state.connId, members: rosterOf(result.party) });
+        send({ t: "party_ok", code: result.party.code, host: result.party.hostConnId === state.connId, host_id: result.party.hostConnId, members: rosterOf(result.party) });
         broadcastToParty(result.party, { t: "member_join", id: state.connId, username: state.username }, state.connId);
         return;
       }
