@@ -191,10 +191,11 @@ router.get("/my-class-progress", requireAuth, requireRole("student"), ah(async (
   }
 
   const cls = await dbGet<{ name: string }>("SELECT name FROM classes WHERE id = ?", [activeClassId]);
-  const row = await dbGet<{ total_correct: number }>(
-    "SELECT COALESCE(SUM(correct), 0)::int AS total_correct FROM question_attempts WHERE class_id = ?",
+  const row = await dbGet<{ total_correct: number; attempts: number }>(
+    "SELECT COALESCE(SUM(correct), 0)::int AS total_correct, COUNT(*)::int AS attempts FROM question_attempts WHERE class_id = ?",
     [activeClassId]
   );
+  const mem = await dbGet<{ n: number }>("SELECT COUNT(*)::int AS n FROM class_members WHERE class_id = ?", [activeClassId]);
 
   const level = Math.floor(row!.total_correct / CASTLE_LEVEL_STEP);
 
@@ -202,6 +203,8 @@ router.get("/my-class-progress", requireAuth, requireRole("student"), ah(async (
     has_class: true,
     class_name: cls!.name,
     total_correct: row!.total_correct,
+    attempts: row!.attempts,
+    members: mem?.n ?? 0,
     level,
     next_threshold: (level + 1) * CASTLE_LEVEL_STEP,
     // kept so older clients still read something sensible
