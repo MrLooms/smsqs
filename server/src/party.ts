@@ -44,6 +44,20 @@ function generatePartyCode(): string {
   throw new Error("Could not generate a unique party code");
 }
 
+// Are two accounts in the same live party right now? (a home can be visited by party members)
+export function inSameParty(userA: number, userB: number): boolean {
+  for (const p of parties.values()) {
+    let a = false;
+    let b = false;
+    for (const m of p.members.values()) {
+      if (m.userId === userA) a = true;
+      if (m.userId === userB) b = true;
+    }
+    if (a && b) return true;
+  }
+  return false;
+}
+
 export function getParty(code: string): Party | undefined {
   return parties.get(code);
 }

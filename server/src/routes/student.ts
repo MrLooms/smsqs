@@ -3,6 +3,7 @@ import { dbGet, dbAll, dbRun, withTransaction } from "../db";
 import { isUsernameAllowed } from "../usernameFilter";
 import { HouseState, parseHouse, cleanPlaced, cleanChest, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM } from "../house";
 import { HOUSE_ITEM_IDS } from "../houseCatalog";
+import { inSameParty } from "../party";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
   DEFAULT_NAMES, INCUBATE_MS, BOOST_MS, MAX_COLLECTION,
@@ -552,6 +553,68 @@ router.post("/house/debug_tier", requireAuth, requireRole("student"), ah(async (
   });
   if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
   res.json({ ok: true, house: out.state });
+}));
+
+// ---- visiting (Milestone 268) ----
+// A home may be visited by its owner, by anyone who shares a class with them, or by anyone in the same live
+// party (the host shows the party around). Visitors only ever READ - there is no route that lets anyone but
+// the owner change a house.
+async function houseAccess(me: number, owner: number): Promise<boolean> {
+  if (me === owner) return true;
+  const shared = await dbGet(
+    "SELECT 1 AS x FROM class_members a JOIN class_members b ON a.class_id = b.class_id WHERE a.student_id = ? AND b.student_id = ? LIMIT 1",
+    [me, owner]
+  );
+  if (shared) return true;
+  return inSameParty(me, owner);
+}
+
+// Classmates (anyone sharing a class with you) and the size of their home - the Neighborhood board's list.
+router.get("/house/neighbors", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const rows = await dbAll<{ username: string; house_json: string }>(
+    `SELECT DISTINCT u.username AS username, c.house_json AS house_json
+     FROM class_members me JOIN class_members o ON o.class_id = me.class_id AND o.student_id <> me.student_id
+     JOIN users u ON u.id = o.student_id JOIN characters c ON c.user_id = u.id
+     WHERE me.student_id = ? ORDER BY u.username LIMIT 80`,
+    [req.userId!]
+  );
+  res.json({
+    neighbors: rows.map((r) => ({ username: r.username, tier: parseHouse(r.house_json, false).state.tier })),
+  });
+}));
+
+// Another player's home plus the numbers its Trophy Board shows.
+router.get("/house/of/:username", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const owner = await dbGet<{ id: number; username: string; endless_best: number }>(
+    "SELECT id, username, endless_best FROM users WHERE LOWER(username) = LOWER(?) AND role = 'student'",
+    [String(req.params.username ?? "")]
+  );
+  if (!owner) return res.json({ ok: false, error: "No such player" });
+  if (!(await houseAccess(req.userId!, owner.id))) return res.json({ ok: false, error: "You can only visit classmates and party members" });
+  const c = await dbGet<{ house_json: string; level: number; inventory_json: string; lorekin_json: string }>(
+    "SELECT house_json, level, inventory_json, lorekin_json FROM characters WHERE user_id = ?",
+    [owner.id]
+  );
+  if (!c) return res.json({ ok: false, error: "No such player" });
+  const state = parseHouse(c.house_json, owner.username.toLowerCase() === "test").state;
+  let bossKills: Record<string, number> = {};
+  let tier = 0;
+  try {
+    const inv = JSON.parse(c.inventory_json);
+    const badge = Array.isArray(inv) ? inv.find((i: any) => i && i.badge) : undefined;
+    if (badge) {
+      bossKills = badge.boss_kills && typeof badge.boss_kills === "object" ? badge.boss_kills : {};
+      tier = Number.isInteger(badge.max_unlocked_tier) ? badge.max_unlocked_tier : 0;
+    }
+  } catch { /* leave the defaults */ }
+  let lorekinCount = 0;
+  try { lorekinCount = (JSON.parse(c.lorekin_json).list ?? []).length; } catch { /* 0 */ }
+  res.json({
+    ok: true,
+    owner: owner.username,
+    house: houseToClient(state),
+    stats: { level: c.level, tier, boss_kills: bossKills, endless_best: owner.endless_best ?? 0, lorekin: lorekinCount },
+  });
 }));
 
 router.post("/house/floor", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
