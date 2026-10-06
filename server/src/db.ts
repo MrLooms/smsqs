@@ -215,6 +215,9 @@ export async function initDb() {
   // Milestone 256: Lorekin (pets) - collection, active one and egg incubator, as one opaque JSON
   // blob (see lorekin.ts). Changed only through the /api/lorekin/* routes, never the character PUT.
   await pool.query(`ALTER TABLE characters ADD COLUMN IF NOT EXISTS lorekin_json TEXT NOT NULL DEFAULT '{"list":[],"active":null,"next_id":1,"incubator":null}'`);
+  // Milestone 262: the player home - owned furniture, placed layout, floor style, tier (see house.ts). Changed only
+  // through the /api/house/* routes, never the character PUT.
+  await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS house_json TEXT NOT NULL DEFAULT '{}'");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_x INTEGER");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_y INTEGER");
   // Milestone 185: LPC character customization (phase 2) - which variant of each layer

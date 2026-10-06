@@ -57,6 +57,7 @@ export interface CharacterState {
   appearance: Appearance;
   // Milestone 256: read-only here - Lorekin state is changed through /api/lorekin/*, never the PUT.
   lorekin?: unknown;
+  house?: unknown; // Milestone 262: read-only here too - changed through /api/house/*
 }
 
 export const DEFAULT_APPEARANCE: Appearance = {

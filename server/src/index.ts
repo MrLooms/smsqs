@@ -8,6 +8,7 @@ import { ah } from "./asyncHandler";
 import { CharacterState, DEFAULT_CHARACTER, DEFAULT_APPEARANCE, Item } from "./types";
 import { isUsernameAllowed } from "./usernameFilter";
 import { parseState as parseLorekin, toClient as lorekinToClient, fillAllSpecies } from "./lorekin";
+import { parseHouse, houseToClient } from "./house";
 import teacherRouter from "./routes/teacher";
 import studentRouter from "./routes/student";
 import { attachMultiplayer } from "./ws";
@@ -48,6 +49,11 @@ async function loadCharacter(userId: number): Promise<CharacterState> {
     await dbRun("UPDATE characters SET lorekin_json = ? WHERE user_id = ?", [JSON.stringify(lk), userId]);
   }
 
+  // Milestone 262: the home - the starter pack is granted (and the test account topped up) on first read.
+  const isTest = !!who && who.username.toLowerCase() === "test";
+  const hs = parseHouse(row.house_json, isTest);
+  if (hs.changed) await dbRun("UPDATE characters SET house_json = ? WHERE user_id = ?", [JSON.stringify(hs.state), userId]);
+
   return {
     level: row.level,
     xp: row.xp,
@@ -64,6 +70,7 @@ async function loadCharacter(userId: number): Promise<CharacterState> {
     world_y: row.world_y ?? null,
     appearance: row.appearance_json ? JSON.parse(row.appearance_json) : DEFAULT_APPEARANCE,
     lorekin: lorekinToClient(lk),
+    house: houseToClient(hs.state),
   };
 }
 

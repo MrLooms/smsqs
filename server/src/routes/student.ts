@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { dbGet, dbAll, dbRun, withTransaction } from "../db";
 import { isUsernameAllowed } from "../usernameFilter";
+import { HouseState, parseHouse, cleanPlaced, houseToClient, FLOORS } from "../house";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
   DEFAULT_NAMES, INCUBATE_MS, BOOST_MS, MAX_COLLECTION,
@@ -464,6 +465,49 @@ router.post("/lorekin/debug_ready", requireAuth, requireRole("student"), ah(asyn
   });
   if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
   res.json({ ok: true, lorekin: out.state });
+}));
+
+// Milestone 262: the player home. Same locked read-modify-write as the Lorekin routes; logic errors come
+// back as HTTP 200 { ok: false, error } (GX.games hides the body of a non-2xx response).
+async function houseMutate(
+  userId: number,
+  fn: (st: HouseState) => string | void
+): Promise<{ error?: string; state: ReturnType<typeof houseToClient> }> {
+  return withTransaction(async (query) => {
+    const r = await query("SELECT c.house_json, u.username FROM characters c JOIN users u ON u.id = c.user_id WHERE c.user_id = ? FOR UPDATE OF c", [userId]);
+    const isTest = String(r.rows[0]?.username ?? "").toLowerCase() === "test";
+    const { state } = parseHouse(r.rows[0]?.house_json, isTest);
+    const err = fn(state);
+    if (err) return { error: err, state: houseToClient(state) };
+    await query("UPDATE characters SET house_json = ? WHERE user_id = ?", [JSON.stringify(state), userId]);
+    return { state: houseToClient(state) };
+  });
+}
+
+router.get("/house", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const out = await houseMutate(req.userId!, () => {});
+  res.json({ house: out.state });
+}));
+
+// The whole layout in one go (the editor saves when you press Done): { placed: [{ item, x, y, flip }] }.
+router.post("/house/save", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const out = await houseMutate(req.userId!, (st) => {
+    const cleaned = cleanPlaced(st, req.body?.placed);
+    if (typeof cleaned === "string") return cleaned;
+    st.placed = cleaned;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
+  res.json({ ok: true, house: out.state });
+}));
+
+router.post("/house/floor", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const floor = String(req.body?.floor ?? "");
+  const out = await houseMutate(req.userId!, (st) => {
+    if (!FLOORS.includes(floor)) return "Unknown floor";
+    st.floor = floor;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
+  res.json({ ok: true, house: out.state });
 }));
 
 export default router;
