@@ -22,7 +22,8 @@ export const DEFAULT_NAMES: Record<string, string> = {
   eyebat: "Eyebat", brain: "Brainiac", kobold: "Kobold Mage",
 };
 
-export const INCUBATE_MS = 24 * 60 * 60 * 1000;
+// how long an egg takes by rarity: Common 6h, Rare 12h, Epic 18h, Legendary 24h (an egg already incubating keeps its time)
+export const incubateMs = (rarity: number) => (Math.max(0, Math.min(3, rarity)) + 1) * 6 * 60 * 60 * 1000;
 export const BOOST_MS = 6 * 60 * 60 * 1000; // one Knowledge Crystal charge
 export const MAX_COLLECTION = 60;
 export const MAX_NAME_LEN = 14;

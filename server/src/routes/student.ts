@@ -6,7 +6,7 @@ import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import { inSameParty } from "../party";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
-  DEFAULT_NAMES, INCUBATE_MS, BOOST_MS, MAX_COLLECTION,
+  DEFAULT_NAMES, incubateMs, BOOST_MS, MAX_COLLECTION,
 } from "../lorekin";
 import { requireAuth, requireRole, AuthedRequest } from "../auth";
 import { ah } from "../asyncHandler";
@@ -373,7 +373,7 @@ router.post("/lorekin/incubate", requireAuth, requireRole("student"), ah(async (
   const out = await lorekinMutate(req.userId!, (st) => {
     if (st.incubator) return "Something is already incubating";
     if (st.list.length >= MAX_COLLECTION) return "Your Lorekin collection is full";
-    st.incubator = { rarity, ready_at: Date.now() + INCUBATE_MS };
+    st.incubator = { rarity, ready_at: Date.now() + incubateMs(rarity) };
   });
   if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
   res.json({ ok: true, lorekin: out.state });
