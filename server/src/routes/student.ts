@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { dbGet, dbAll, dbRun, withTransaction } from "../db";
 import { isUsernameAllowed } from "../usernameFilter";
-import { HouseState, parseHouse, cleanPlaced, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM } from "../house";
+import { HouseState, parseHouse, cleanPlaced, cleanChest, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM } from "../house";
 import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
@@ -495,6 +495,11 @@ router.post("/house/save", requireAuth, requireRole("student"), ah(async (req: A
   const out = await houseMutate(req.userId!, (st) => {
     const cleaned = cleanPlaced(st, req.body?.placed);
     if (typeof cleaned === "string") return cleaned;
+    if (req.body?.chest != null) {
+      const c = cleanChest(st, req.body.chest);
+      if (typeof c === "string") return c;
+      st.chest = c;
+    }
     st.placed = cleaned;
   });
   if (out.error) return res.json({ ok: false, error: out.error, house: out.state });

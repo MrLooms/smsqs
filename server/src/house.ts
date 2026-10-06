@@ -27,6 +27,7 @@ export interface HouseState {
   wall: string;
   owned: Record<string, number>;
   placed: Placed[];
+  chest: { x: number; y: number }; // where the storage chest stands (movable, never deletable)
   v: number; // layout version; < 2 means the short-lived starter pack was granted - cleared on first read
 }
 
@@ -36,8 +37,10 @@ const ITEM_SET = new Set(HOUSE_ITEM_IDS);
 // exception: it owns plenty of every piece, including ones added to the catalog later.
 export const MAX_OWNED_PER_ITEM = 99;
 
+export const DEFAULT_CHEST = { x: 570, y: 150 };
+
 export function defaultHouse(): HouseState {
-  return { tier: 0, floor: "stone_brown", wall: "brick", owned: {}, placed: [], v: 2 };
+  return { tier: 0, floor: "stone_brown", wall: "brick", owned: {}, placed: [], chest: { ...DEFAULT_CHEST }, v: 2 };
 }
 
 // Returns the parsed state and whether parsing had to ADD something (the starter pack, the test
@@ -52,6 +55,7 @@ export function parseHouse(json: string | null | undefined, isTest: boolean): { 
       wall: WALLS.includes(p.wall) ? p.wall : "brick",
       owned: p.owned && typeof p.owned === "object" ? p.owned : {},
       placed: Array.isArray(p.placed) ? p.placed : [],
+      chest: p.chest && Number.isFinite(p.chest.x) && Number.isFinite(p.chest.y) ? { x: Math.round(p.chest.x), y: Math.round(p.chest.y) } : { ...DEFAULT_CHEST },
       v: Number.isInteger(p.v) ? p.v : 1,
     };
   } catch {
@@ -96,6 +100,17 @@ export function cleanPlaced(s: HouseState, raw: unknown): Placed[] | string {
   return out;
 }
 
+// A chest position from the client, checked against the room; returns the cleaned point or an error message.
+export function cleanChest(s: HouseState, raw: unknown): { x: number; y: number } | string {
+  const r = raw as { x?: unknown; y?: unknown } | null;
+  if (!r) return "Bad chest position";
+  const x = Math.round(Number(r.x));
+  const y = Math.round(Number(r.y));
+  const t = TIERS[s.tier];
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 20 || x > t.w - 20 || y < 60 || y > t.h - 20) return "The chest is outside the room";
+  return { x, y };
+}
+
 export function houseToClient(s: HouseState) {
-  return { tier: s.tier, floor: s.floor, wall: s.wall, owned: s.owned, placed: s.placed, max: TIERS[s.tier].max, w: TIERS[s.tier].w, h: TIERS[s.tier].h };
+  return { tier: s.tier, floor: s.floor, wall: s.wall, chest: s.chest, owned: s.owned, placed: s.placed, max: TIERS[s.tier].max, w: TIERS[s.tier].w, h: TIERS[s.tier].h };
 }

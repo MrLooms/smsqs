@@ -206,4 +206,5 @@ export const HOUSE_ITEM_IDS: string[] = [
   "kitchen_props6_2",
   "kitchen_props6_3",
   "kitchen_props6_4",
+  "trophy_board",
 ];
