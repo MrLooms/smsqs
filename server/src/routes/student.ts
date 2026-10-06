@@ -428,6 +428,20 @@ router.post("/lorekin/rename", requireAuth, requireRole("student"), ah(async (re
   res.json({ ok: true, lorekin: out.state });
 }));
 
+// Releasing a Lorekin deletes it from the collection for good. The game asks "are you sure?" first; if it
+// was the active one, nothing is out afterwards. (An egg already incubating is unaffected.)
+router.post("/lorekin/release", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const id = Number(req.body?.id);
+  const out = await lorekinMutate(req.userId!, (st) => {
+    const i = st.list.findIndex((x) => x.id === id);
+    if (i < 0) return "No such Lorekin";
+    st.list.splice(i, 1);
+    if (st.active === id) st.active = null;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
+  res.json({ ok: true, lorekin: out.state });
+}));
+
 router.post("/lorekin/active", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
   const raw = req.body?.id;
   const id = raw == null ? null : Number(raw);
