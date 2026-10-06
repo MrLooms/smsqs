@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { dbGet, dbAll, dbRun, withTransaction } from "../db";
 import { isUsernameAllowed } from "../usernameFilter";
-import { HouseState, parseHouse, cleanPlaced, houseToClient, FLOORS } from "../house";
+import { HouseState, parseHouse, cleanPlaced, houseToClient, FLOORS, MAX_OWNED_PER_ITEM } from "../house";
+import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
   DEFAULT_NAMES, INCUBATE_MS, BOOST_MS, MAX_COLLECTION,
@@ -495,6 +496,19 @@ router.post("/house/save", requireAuth, requireRole("student"), ah(async (req: A
     const cleaned = cleanPlaced(st, req.body?.placed);
     if (typeof cleaned === "string") return cleaned;
     st.placed = cleaned;
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
+  res.json({ ok: true, house: out.state });
+}));
+
+// Records a purchase from the Carpenter: +1 of an item. The game checks and spends the gold itself (gold is
+// client-side, like the shop), calling this FIRST and spending only if it succeeds.
+router.post("/house/buy", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const item = String(req.body?.item ?? "");
+  const out = await houseMutate(req.userId!, (st) => {
+    if (!HOUSE_ITEM_IDS.includes(item)) return "Unknown furniture";
+    if ((st.owned[item] ?? 0) >= MAX_OWNED_PER_ITEM) return "You already own plenty of those";
+    st.owned[item] = (st.owned[item] ?? 0) + 1;
   });
   if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
   res.json({ ok: true, house: out.state });

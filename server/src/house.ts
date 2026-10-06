@@ -24,20 +24,17 @@ export interface HouseState {
   floor: string;
   owned: Record<string, number>;
   placed: Placed[];
-  starter: boolean;
+  v: number; // layout version; < 2 means the short-lived starter pack was granted - cleared on first read
 }
 
 const ITEM_SET = new Set(HOUSE_ITEM_IDS);
 
-// What a brand-new home owns: enough to make one room feel lived in.
-const STARTER: Record<string, number> = {
-  bed_1: 1, headboard_1: 2, table_chairs_0: 2, big_rect_table_0: 1, bench_0: 1,
-  plants_1: 2, plants_3: 1, candlesticks_10: 2, cabinet_3: 1, chests_0: 1,
-  decors_paintings_7: 1, banner_0: 1,
-};
+// A new home owns NOTHING - every piece is bought from the Carpenter (or won). The "test" account is the
+// exception: it owns plenty of every piece, including ones added to the catalog later.
+export const MAX_OWNED_PER_ITEM = 99;
 
 export function defaultHouse(): HouseState {
-  return { tier: 0, floor: "stone_brown", owned: {}, placed: [], starter: false };
+  return { tier: 0, floor: "stone_brown", owned: {}, placed: [], v: 2 };
 }
 
 // Returns the parsed state and whether parsing had to ADD something (the starter pack, the test
@@ -51,15 +48,17 @@ export function parseHouse(json: string | null | undefined, isTest: boolean): { 
       floor: FLOORS.includes(p.floor) ? p.floor : "stone_brown",
       owned: p.owned && typeof p.owned === "object" ? p.owned : {},
       placed: Array.isArray(p.placed) ? p.placed : [],
-      starter: !!p.starter,
+      v: Number.isInteger(p.v) ? p.v : 1,
     };
   } catch {
     /* fall back to the default */
   }
   let changed = false;
-  if (!s.starter) {
-    for (const [id, n] of Object.entries(STARTER)) s.owned[id] = (s.owned[id] ?? 0) + n;
-    s.starter = true;
+  if (s.v < 2) {
+    // an earlier build granted a starter pack; nothing has been purchasable until now, so wipe it
+    s.owned = {};
+    s.placed = [];
+    s.v = 2;
     changed = true;
   }
   if (isTest) {
