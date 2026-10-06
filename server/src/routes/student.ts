@@ -539,6 +539,21 @@ router.post("/house/upgrade", requireAuth, requireRole("student"), ah(async (req
   res.json({ ok: true, house: out.state });
 }));
 
+// Testing aid ("test" account only): cycle the home size Cottage -> House -> Manor -> Cottage. Going DOWN keeps
+// only the pieces that still fit (inside the smaller room, within its piece cap) - nothing owned is lost.
+router.post("/house/debug_tier", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const u = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [req.userId!]);
+  if (!u || u.username.toLowerCase() !== "test") return res.json({ ok: false, error: "Not available" });
+  const out = await houseMutate(req.userId!, (st) => {
+    st.tier = (st.tier + 1) % TIERS.length;
+    const t = TIERS[st.tier];
+    st.placed = st.placed.filter((p) => p.x >= 20 && p.x <= t.w - 20 && p.y >= 60 && p.y <= t.h - 20).slice(0, t.max);
+    if (st.chest.x > t.w - 20 || st.chest.y > t.h - 20) st.chest = { x: Math.min(st.chest.x, t.w - 70), y: Math.min(st.chest.y, 150) };
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
+  res.json({ ok: true, house: out.state });
+}));
+
 router.post("/house/floor", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
   const floor = String(req.body?.floor ?? "");
   const out = await houseMutate(req.userId!, (st) => {

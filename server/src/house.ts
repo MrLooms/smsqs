@@ -74,7 +74,6 @@ export function parseHouse(json: string | null | undefined, isTest: boolean): { 
     for (const id of HOUSE_ITEM_IDS) {
       if ((s.owned[id] ?? 0) < 10) { s.owned[id] = 10; changed = true; }
     }
-    if (s.tier < TIERS.length - 1) { s.tier = TIERS.length - 1; changed = true; }
   }
   return { state: s, changed };
 }
