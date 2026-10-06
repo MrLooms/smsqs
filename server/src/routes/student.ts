@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { dbGet, dbAll, dbRun, withTransaction } from "../db";
 import { isUsernameAllowed } from "../usernameFilter";
+import { isTestName } from "../testAccount";
 import { HouseState, parseHouse, cleanPlaced, cleanChest, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM, isFreeItem } from "../house";
 import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import { inSameParty } from "../party";
@@ -220,7 +221,7 @@ router.get("/my-class-progress", requireAuth, requireRole("student"), ah(async (
 // questions.
 router.post("/debug/add-class-correct", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
   const user = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [req.userId!]);
-  if (!user || user.username.toLowerCase() !== "test") {
+  if (!user || !isTestName(user.username)) {
     return res.status(403).json({ error: "Debug-only route" });
   }
 
@@ -450,7 +451,7 @@ router.post("/lorekin/active", requireAuth, requireRole("student"), ah(async (re
 // its incubator instantly, since waiting 24 real hours to test a hatch is no use to anyone.
 router.post("/lorekin/debug_ready", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
   const u = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [req.userId!]);
-  if (!u || u.username.toLowerCase() !== "test") return res.json({ ok: false, error: "Not available" });
+  if (!u || !isTestName(u.username)) return res.json({ ok: false, error: "Not available" });
   const out = await lorekinMutate(req.userId!, (st) => {
     if (!st.incubator) return "Nothing is incubating";
     st.incubator.ready_at = Date.now() - 1000;
@@ -467,7 +468,7 @@ async function houseMutate(
 ): Promise<{ error?: string; state: ReturnType<typeof houseToClient> }> {
   return withTransaction(async (query) => {
     const r = await query("SELECT c.house_json, u.username FROM characters c JOIN users u ON u.id = c.user_id WHERE c.user_id = ? FOR UPDATE OF c", [userId]);
-    const isTest = String(r.rows[0]?.username ?? "").toLowerCase() === "test";
+    const isTest = isTestName(r.rows[0]?.username);
     const { state } = parseHouse(r.rows[0]?.house_json, isTest);
     const err = fn(state);
     if (err) return { error: err, state: houseToClient(state) };
@@ -535,7 +536,7 @@ router.post("/house/upgrade", requireAuth, requireRole("student"), ah(async (req
 // only the pieces that still fit (inside the smaller room, within its piece cap) - nothing owned is lost.
 router.post("/house/debug_tier", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
   const u = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [req.userId!]);
-  if (!u || u.username.toLowerCase() !== "test") return res.json({ ok: false, error: "Not available" });
+  if (!u || !isTestName(u.username)) return res.json({ ok: false, error: "Not available" });
   const out = await houseMutate(req.userId!, (st) => {
     st.tier = (st.tier + 1) % TIERS.length;
     const t = TIERS[st.tier];
@@ -570,7 +571,7 @@ router.get("/house/of/:username", requireAuth, requireRole("student"), ah(async 
     [owner.id]
   );
   if (!c) return res.json({ ok: false, error: "No such player" });
-  const state = parseHouse(c.house_json, owner.username.toLowerCase() === "test").state;
+  const state = parseHouse(c.house_json, isTestName(owner.username)).state;
   let bossKills: Record<string, number> = {};
   let tier = 0;
   try {

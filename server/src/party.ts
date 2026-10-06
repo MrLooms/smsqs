@@ -3,6 +3,8 @@
 // server restart, so there's no table for this in db.ts.
 
 const PARTY_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L
+import { isTestName } from "./testAccount";
+
 const MAX_PARTY_SIZE = 4;
 
 export interface PartyMember {
@@ -109,7 +111,7 @@ export function joinParty(
   const party = parties.get(code.trim().toUpperCase());
   if (!party) return { error: "No party with that code" };
   // the "test" account has no party size limit: a party it hosts takes anyone, and it can join a full one
-  const isTest = (u: string | undefined) => u?.toLowerCase() === "test";
+  const isTest = isTestName;
   const host = party.members.get(party.hostConnId);
   if (party.members.size >= MAX_PARTY_SIZE && !isTest(host?.username) && !isTest(username)) return { error: "That party is full" };
 

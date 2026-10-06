@@ -194,6 +194,18 @@
     <div class="error hidden" id="set-error"></div>
   </div>
 
+  <div class="card" id="my-password-card">
+    <h2>Change my password</h2>
+    <div class="row">
+      <input id="my-pw-current" type="password" placeholder="Current password" autocomplete="current-password">
+      <input id="my-pw-new" type="password" placeholder="New password (4+ characters)" autocomplete="new-password">
+      <input id="my-pw-confirm" type="password" placeholder="New password again" autocomplete="new-password">
+      <button id="btn-change-my-password">Change password</button>
+    </div>
+    <div class="error hidden" id="my-pw-error"></div>
+    <div class="ok-msg hidden" id="my-pw-success"></div>
+  </div>
+
   <div class="card hidden" id="admin-reset-card">
     <h2>Admin: reset any account's password</h2>
     <p style="color:var(--muted); font-size:13px">
@@ -702,6 +714,27 @@ document.getElementById("btn-remove-student").onclick = async () => {
     openClass(currentClassId);
   } catch (e) {
     setError("remove-student-error", e.message);
+  }
+};
+
+// Milestone 273: a teacher changes their own password (the same /api/change-password the game uses; needs the current one)
+document.getElementById("btn-change-my-password").onclick = async () => {
+  setError("my-pw-error", "");
+  document.getElementById("my-pw-success").classList.add("hidden");
+  const cur = document.getElementById("my-pw-current").value;
+  const pw = document.getElementById("my-pw-new").value;
+  const again = document.getElementById("my-pw-confirm").value;
+  if (!cur) return setError("my-pw-error", "Enter your current password");
+  if (pw.length < 4) return setError("my-pw-error", "Your new password needs at least 4 characters");
+  if (pw !== again) return setError("my-pw-error", "The two new passwords don't match");
+  try {
+    await api("POST", "/api/change-password", { current_password: cur, new_password: pw });
+    ["my-pw-current", "my-pw-new", "my-pw-confirm"].forEach(id => { document.getElementById(id).value = ""; });
+    const ok = document.getElementById("my-pw-success");
+    ok.textContent = "Password changed.";
+    ok.classList.remove("hidden");
+  } catch (e) {
+    setError("my-pw-error", e.message);
   }
 };
 

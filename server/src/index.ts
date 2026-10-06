@@ -1,3 +1,4 @@
+import { isTestName } from "./testAccount";
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
@@ -45,12 +46,12 @@ async function loadCharacter(userId: number): Promise<CharacterState> {
   // every Lorekin species - topped up here on every login, saved if it added anything.
   const lk = parseLorekin(row.lorekin_json);
   const who = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [userId]);
-  if (who && who.username.toLowerCase() === "test" && fillAllSpecies(lk)) {
+  if (who && isTestName(who.username) && fillAllSpecies(lk)) {
     await dbRun("UPDATE characters SET lorekin_json = ? WHERE user_id = ?", [JSON.stringify(lk), userId]);
   }
 
   // Milestone 262: the home - the starter pack is granted (and the test account topped up) on first read.
-  const isTest = !!who && who.username.toLowerCase() === "test";
+  const isTest = !!who && isTestName(who.username);
   const hs = parseHouse(row.house_json, isTest);
   if (hs.changed) await dbRun("UPDATE characters SET house_json = ? WHERE user_id = ?", [JSON.stringify(hs.state), userId]);
 

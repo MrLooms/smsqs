@@ -173,12 +173,23 @@ export async function initDb() {
   // it) since its CREATE TABLE IF NOT EXISTS only applies to a fresh table.
   // Postgres's ADD COLUMN IF NOT EXISTS does the same job in one line.
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'student'");
-  // Milestone 171: a single designated admin account ("tester") that can reset ANY account's
+  // Milestone 171: a single designated admin account ("admin", formerly "tester") that can reset ANY account's
   // password (student or teacher, any class or none) - bypasses the per-teacher class-ownership
   // scoping everything else in routes/teacher.ts enforces. Re-applied on every boot (not just at
   // table-creation time) so it's self-healing if that account ever gets dropped and re-registered.
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false");
-  await pool.query("UPDATE users SET is_admin = true WHERE username = 'tester'");
+  // Milestone 273: the accounts were renamed - the developer/test account "test" is now "MrLooms" and the admin teacher
+  // "tester" is now "admin". Done once, here, if the old name exists and the new one is free (never overwrites an
+  // account). The server's test-account checks accept both names (testAccount.ts).
+  for (const [from, to] of [["test", "MrLooms"], ["tester", "admin"]]) {
+    const old = await pool.query("SELECT id FROM users WHERE LOWER(username) = LOWER($1)", [from]);
+    if (old.rows.length === 0) continue;
+    const taken = await pool.query("SELECT id FROM users WHERE LOWER(username) = LOWER($1)", [to]);
+    if (taken.rows.length > 0) { console.warn("[db] not renaming " + from + " -> " + to + ": that name is already taken"); continue; }
+    await pool.query("UPDATE users SET username = $1 WHERE id = $2", [to, old.rows[0].id]);
+    console.log("[db] renamed account " + from + " -> " + to);
+  }
+  await pool.query("UPDATE users SET is_admin = true WHERE LOWER(username) = 'admin' AND role = 'teacher'");
   // Milestone 173: teacher password recovery - null for every existing account (including old
   // teacher accounts registered before this existed), required only for NEW teacher registrations
   // going forward. A student account never has one - the "forgot password" flow is teacher-only,

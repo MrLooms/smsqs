@@ -64,7 +64,7 @@ export function requireRole(role: "teacher" | "student") {
   };
 }
 
-// Milestone 171: the designated admin account (users.is_admin, set for "tester" - see db.ts)
+// Milestone 171: the designated admin account (users.is_admin, set for "admin", formerly "tester" - see db.ts)
 // bypasses every per-teacher class-ownership scope. Used for cross-class/cross-teacher fixes a
 // regular teacher shouldn't be able to reach into (e.g. resetting ANY account's password, not
 // just their own students') - by direct request, after a multi-teacher security concern was
