@@ -150,16 +150,18 @@ router.get("/my-questions", requireAuth, requireRole("student"), ah(async (req: 
 // *right now* - if they switch classes later, this attempt still counts
 // against the class it was actually made in.
 router.post("/question-attempts", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
-  const { question_id, topic, correct } = req.body ?? {};
+  const { question_id, topic, correct, time_ms } = req.body ?? {};
   if (typeof correct !== "boolean") {
     return res.status(400).json({ error: "correct (boolean) is required" });
   }
+  // how long the student took to answer (Milestone 274) - optional, clamped to a sane range
+  const took = Number.isFinite(Number(time_ms)) && time_ms !== null ? Math.max(0, Math.min(600000, Math.round(Number(time_ms)))) : null;
 
   const activeClassId = await getActiveClassId(req.userId!);
 
   await dbRun(
-    "INSERT INTO question_attempts (student_id, class_id, question_id, topic, correct) VALUES (?, ?, ?, ?, ?)",
-    [req.userId!, activeClassId, question_id != null ? String(question_id) : null, topic ?? null, correct ? 1 : 0]
+    "INSERT INTO question_attempts (student_id, class_id, question_id, topic, correct, time_ms) VALUES (?, ?, ?, ?, ?, ?)",
+    [req.userId!, activeClassId, question_id != null ? String(question_id) : null, topic ?? null, correct ? 1 : 0, took]
   );
 
   res.status(201).json({ ok: true });

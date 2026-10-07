@@ -1,6 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { dbGet, dbAll, dbRun, dbInsertId, withTransaction } from "../db";
+import { LAST_ACTIVE_SQL, INACTIVE_WHERE_SQL, INACTIVE_DAYS, deleteAccountRows, isProtectedAccount } from "../activity";
 import { generateToken, requireAuth, requireRole, requireAdmin, AuthedRequest } from "../auth";
 import { ah } from "../asyncHandler";
 import { parseCsv } from "../csv";
@@ -179,7 +180,11 @@ router.get("/classes/:id", ah(async (req: AuthedRequest, res) => {
   if (!cls) return res.status(404).json({ error: "Class not found" });
 
   const roster = await dbAll(
-    `SELECT u.id AS student_id, u.username, m.joined_at FROM class_members m
+    `SELECT u.id AS student_id, u.username, m.joined_at,
+       ${LAST_ACTIVE_SQL} AS last_active,
+       COALESCE((SELECT SUM(pa.seconds) FROM play_activity pa WHERE pa.user_id = u.id AND pa.day >= CURRENT_DATE - 6), 0)::int AS secs_7d,
+       COALESCE((SELECT SUM(pa.seconds) FROM play_activity pa WHERE pa.user_id = u.id), 0)::int AS secs_total
+     FROM class_members m
      JOIN users u ON u.id = m.student_id
      WHERE m.class_id = ? ORDER BY m.joined_at ASC`,
     [classId]
@@ -298,9 +303,36 @@ router.get("/classes/:id/students/:studentId", ah(async (req: AuthedRequest, res
     set.questions.push({ id: r.question_id, prompt: r.prompt, topic: r.topic, attempts: r.attempts, correct_count: r.correct_count });
   }
 
+  // Milestone 274: play time and answer speed (play time is across the whole game, not just this class)
+  const act = await dbGet<{ last_active: string; secs_7d: number; secs_total: number; sessions_7d: number }>(
+    `SELECT ${LAST_ACTIVE_SQL} AS last_active,
+       COALESCE((SELECT SUM(pa.seconds) FROM play_activity pa WHERE pa.user_id = u.id AND pa.day >= CURRENT_DATE - 6), 0)::int AS secs_7d,
+       COALESCE((SELECT SUM(pa.seconds) FROM play_activity pa WHERE pa.user_id = u.id), 0)::int AS secs_total,
+       (SELECT COUNT(*) FROM play_sessions p WHERE p.user_id = u.id AND p.last_seen >= now() - interval '7 days')::int AS sessions_7d
+     FROM users u WHERE u.id = ?`,
+    [studentId]
+  );
+  const days = await dbAll<{ day: string; seconds: number }>(
+    "SELECT to_char(day, 'YYYY-MM-DD') AS day, SUM(seconds)::int AS seconds FROM play_activity WHERE user_id = ? AND day >= CURRENT_DATE - 13 GROUP BY day ORDER BY day",
+    [studentId]
+  );
+  const areas = await dbAll<{ area: string; seconds: number }>(
+    "SELECT area, SUM(seconds)::int AS seconds FROM play_activity WHERE user_id = ? AND day >= CURRENT_DATE - 29 GROUP BY area ORDER BY SUM(seconds) DESC",
+    [studentId]
+  );
+  const speed = await dbGet<{ avg_ms: number | null; right_ms: number | null; wrong_ms: number | null; timed: number }>(
+    `SELECT AVG(time_ms)::int AS avg_ms,
+       AVG(time_ms) FILTER (WHERE correct = 1)::int AS right_ms,
+       AVG(time_ms) FILTER (WHERE correct = 0)::int AS wrong_ms,
+       COUNT(time_ms)::int AS timed
+     FROM question_attempts WHERE student_id = ? AND class_id = ?`,
+    [studentId, classId]
+  );
+
   res.json({
     student: { id: studentId, username: member.username },
     overall,
+    play: { ...act, days, areas, avg_answer_ms: speed?.avg_ms ?? null, avg_right_ms: speed?.right_ms ?? null, avg_wrong_ms: speed?.wrong_ms ?? null, timed_answers: speed?.timed ?? 0 },
     question_sets: Array.from(setsById.values()),
   });
 }));
@@ -428,24 +460,33 @@ router.post("/admin/reset-password", requireAdmin, ah(async (req: AuthedRequest,
 router.get("/admin/accounts", requireAdmin, ah(async (req: AuthedRequest, res) => {
   const role = req.query.role === "teacher" || req.query.role === "student" ? req.query.role : undefined;
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const onlyInactive = req.query.inactive === "1";
 
   const conditions: string[] = [];
   const params: any[] = [];
   if (role) {
-    conditions.push("role = ?");
+    conditions.push("u.role = ?");
     params.push(role);
   }
   if (q.length > 0) {
-    conditions.push("username ILIKE ?");
+    conditions.push("u.username ILIKE ?");
     params.push(`%${q}%`);
   }
+  if (onlyInactive) conditions.push(INACTIVE_WHERE_SQL);
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
+  // Milestone 274: when each account was last active (login, play, answer or dungeon run) and whether that is more
+  // than INACTIVE_DAYS ago - the flagged ones can be deleted in bulk (below). The inactive list is oldest first.
   const accounts = await dbAll(
-    `SELECT id, username, role, is_admin FROM users ${where} ORDER BY username ASC LIMIT 500`,
+    `SELECT u.id, u.username, u.role, u.is_admin, ${LAST_ACTIVE_SQL} AS last_active,
+       (${INACTIVE_WHERE_SQL}) AS inactive,
+       COALESCE((SELECT SUM(pa.seconds) FROM play_activity pa WHERE pa.user_id = u.id), 0)::int AS secs_total
+     FROM users u ${where}
+     ORDER BY ${onlyInactive ? "last_active ASC" : "u.username ASC"} LIMIT 500`,
     params
   );
-  res.json({ accounts });
+  const inactiveCount = await dbGet<{ n: number }>(`SELECT COUNT(*)::int AS n FROM users u WHERE ${INACTIVE_WHERE_SQL}`);
+  res.json({ accounts, inactive_days: INACTIVE_DAYS, inactive_total: inactiveCount?.n ?? 0 });
 }));
 
 // Admin-only account deletion, by direct request. Permanent: removes the account and everything
@@ -477,27 +518,38 @@ router.delete("/admin/accounts/:id", requireAdmin, ah(async (req: AuthedRequest,
   }
 
   await withTransaction(async (query) => {
-    if (target.role === "teacher") {
-      await query("UPDATE users SET active_class_id = NULL WHERE active_class_id IN (SELECT id FROM classes WHERE teacher_id = ?)", [targetId]);
-      await query("DELETE FROM class_members WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = ?)", [targetId]);
-      await query(
-        "DELETE FROM class_assignments WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = ?) OR question_set_id IN (SELECT id FROM question_sets WHERE teacher_id = ?)",
-        [targetId, targetId]
-      );
-      await query("DELETE FROM classes WHERE teacher_id = ?", [targetId]);
-      await query("DELETE FROM questions WHERE question_set_id IN (SELECT id FROM question_sets WHERE teacher_id = ?)", [targetId]);
-      await query("DELETE FROM question_sets WHERE teacher_id = ?", [targetId]);
-    }
-    await query("DELETE FROM sessions WHERE user_id = ?", [targetId]);
-    await query("DELETE FROM password_reset_tokens WHERE user_id = ?", [targetId]);
-    await query("DELETE FROM dungeon_runs WHERE user_id = ?", [targetId]);
-    await query("DELETE FROM question_attempts WHERE student_id = ?", [targetId]);
-    await query("DELETE FROM class_members WHERE student_id = ?", [targetId]);
-    await query("DELETE FROM characters WHERE user_id = ?", [targetId]);
-    await query("DELETE FROM users WHERE id = ?", [targetId]);
+    await deleteAccountRows(query, { id: targetId, role: target.role });
   });
 
   res.json({ ok: true, deleted: target.username });
+}));
+
+// Milestone 274: bulk delete of INACTIVE accounts (no login, play, answer or dungeon run for INACTIVE_DAYS). Body:
+// { ids: number[], confirm: "DELETE" }. Safe by construction: each id is re-checked against the inactivity rule right
+// now (a stale list can't delete someone who has just played), admin and test accounts and yourself are always
+// skipped, and everything runs in one transaction. A teacher in the list takes their classes and question sets with
+// them (same as the single delete). Returns what was deleted and what was skipped, and why.
+router.post("/admin/accounts/delete-inactive", requireAdmin, ah(async (req: AuthedRequest, res) => {
+  if (req.body?.confirm !== "DELETE") return res.status(400).json({ error: 'Type DELETE to confirm' });
+  const ids: number[] = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter((n: number) => Number.isInteger(n)) : [];
+  if (ids.length === 0) return res.status(400).json({ error: "No accounts selected" });
+  if (ids.length > 500) return res.status(400).json({ error: "Select at most 500 accounts at a time" });
+
+  const rows = await dbAll<{ id: number; username: string; role: string; is_admin: boolean; inactive: boolean }>(
+    `SELECT u.id, u.username, u.role, u.is_admin, (${INACTIVE_WHERE_SQL}) AS inactive FROM users u WHERE u.id = ANY(?::int[])`,
+    [ids]
+  );
+  const deleted: string[] = [];
+  const skipped: { username: string; reason: string }[] = [];
+  await withTransaction(async (query) => {
+    for (const r of rows) {
+      if (r.id === req.userId || isProtectedAccount(r)) { skipped.push({ username: r.username, reason: "protected account" }); continue; }
+      if (!r.inactive) { skipped.push({ username: r.username, reason: "active in the last " + INACTIVE_DAYS + " days" }); continue; }
+      await deleteAccountRows(query, { id: r.id, role: r.role });
+      deleted.push(r.username);
+    }
+  });
+  res.json({ ok: true, deleted, skipped });
 }));
 
 router.post("/classes/:id/assign", ah(async (req: AuthedRequest, res) => {

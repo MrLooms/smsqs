@@ -1,3 +1,4 @@
+import { PLAY_AREAS } from "./activity";
 import { isTestName } from "./testAccount";
 import express from "express";
 import cors from "cors";
@@ -217,6 +218,36 @@ app.post("/api/change-password", requireAuth, ah(async (req: AuthedRequest, res)
   }
 
   await dbRun("UPDATE users SET password_hash = ? WHERE id = ?", [bcrypt.hashSync(new_password, 10), req.userId!]);
+  res.json({ ok: true });
+}));
+
+// Milestone 274: the game's once-a-minute heartbeat while it is open (see activity.ts). Body: { sid, area, active,
+// build }. The time since this session's previous heartbeat (at most 150s) is credited to today's play_activity for
+// that area - only when active is true (the player touched something recently and the window had focus).
+app.post("/api/heartbeat", requireAuth, ah(async (req: AuthedRequest, res) => {
+  const sid = String(req.body?.sid ?? "").slice(0, 40);
+  if (sid.length < 8) return res.status(400).json({ error: "sid is required" });
+  const area = PLAY_AREAS.includes(String(req.body?.area)) ? String(req.body.area) : "other";
+  const active = req.body?.active === true;
+  const build = String(req.body?.build ?? "").slice(0, 24);
+
+  const row = await dbGet<{ gap: number }>(
+    "SELECT EXTRACT(EPOCH FROM (now() - last_seen))::float AS gap FROM play_sessions WHERE sid = ? AND user_id = ?",
+    [sid, req.userId!]
+  );
+  if (!row) {
+    await dbRun("INSERT INTO play_sessions (sid, user_id, build) VALUES (?, ?, ?) ON CONFLICT DO NOTHING", [sid, req.userId!, build]);
+    return res.json({ ok: true });
+  }
+  if (row.gap < 10) return res.json({ ok: true }); // too soon after the last one - ignore (a buggy or spamming client)
+  const secs = active ? Math.min(Math.round(row.gap), 150) : 0;
+  await dbRun("UPDATE play_sessions SET last_seen = now(), active_seconds = active_seconds + ? WHERE sid = ?", [secs, sid]);
+  if (secs > 0) {
+    await dbRun(
+      "INSERT INTO play_activity (user_id, day, area, seconds) VALUES (?, CURRENT_DATE, ?, ?) ON CONFLICT (user_id, day, area) DO UPDATE SET seconds = play_activity.seconds + EXCLUDED.seconds",
+      [req.userId!, area, secs]
+    );
+  }
   res.json({ ok: true });
 }));
 

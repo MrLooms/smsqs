@@ -190,6 +190,26 @@ export async function initDb() {
     console.log("[db] renamed account " + from + " -> " + to);
   }
   await pool.query("UPDATE users SET is_admin = true WHERE LOWER(username) = 'admin' AND role = 'teacher'");
+  // Milestone 274: playtime / session tracking and how long each question took (see activity.ts)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS play_sessions (
+      sid TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+      active_seconds INTEGER NOT NULL DEFAULT 0,
+      build TEXT
+    );
+    CREATE INDEX IF NOT EXISTS play_sessions_user ON play_sessions(user_id, last_seen);
+    CREATE TABLE IF NOT EXISTS play_activity (
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      day DATE NOT NULL DEFAULT CURRENT_DATE,
+      area TEXT NOT NULL,
+      seconds INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, day, area)
+    );
+  `);
+  await pool.query("ALTER TABLE question_attempts ADD COLUMN IF NOT EXISTS time_ms INTEGER");
   // Milestone 173: teacher password recovery - null for every existing account (including old
   // teacher accounts registered before this existed), required only for NEW teacher registrations
   // going forward. A student account never has one - the "forgot password" flow is teacher-only,

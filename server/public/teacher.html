@@ -226,11 +226,17 @@
       <button class="active" data-role="">All</button>
       <button data-role="teacher">Teachers</button>
       <button data-role="student">Students</button>
+      <button data-role="" data-inactive="1" id="admin-tab-inactive">Inactive 30+ days</button>
+    </div>
+    <div class="row hidden" id="admin-bulk-bar" style="margin-bottom:10px; align-items:center">
+      <span id="admin-bulk-count" style="color:var(--muted); font-size:13px"></span>
+      <button class="secondary" id="btn-bulk-select-all">Select all shown</button>
+      <button class="danger" id="btn-bulk-delete">Delete selected</button>
     </div>
     <input id="admin-account-search" placeholder="Search by username..." style="margin-bottom:10px">
     <div class="ok-msg hidden" id="admin-generate-success"></div>
     <table class="stats">
-      <thead><tr><th>Username</th><th>Type</th><th></th></tr></thead>
+      <thead><tr><th></th><th>Username</th><th>Type</th><th>Last active</th><th>Play time</th><th></th></tr></thead>
       <tbody id="admin-accounts-tbody"></tbody>
     </table>
     <div class="error hidden" id="admin-accounts-error"></div>
@@ -287,6 +293,9 @@
   <a class="link" id="student-back">&larr; Back</a>
   <h2 id="student-detail-name"></h2>
   <p id="student-overall" style="color:var(--muted); font-size:13px"></p>
+  <p id="student-play" style="color:var(--muted); font-size:13px"></p>
+  <div id="student-play-days" style="display:flex; align-items:flex-end; gap:3px; height:54px; margin-bottom:6px"></div>
+  <p id="student-play-areas" style="color:var(--muted); font-size:12px"></p>
   <div id="student-sets"></div>
 
   <h3>Reset Password</h3>
@@ -378,6 +387,21 @@ function show(id) {
   ["view-auth", "view-register", "view-forgot", "view-reset-token", "view-dashboard", "view-class", "view-analytics", "view-student", "view-set"].forEach(v => {
     document.getElementById(v).classList.toggle("hidden", v !== id);
   });
+}
+
+// Milestone 274: playtime and last-active displays
+function fmtDuration(secs) {
+  secs = Math.round(secs || 0);
+  if (secs < 60) return secs > 0 ? "<1m" : "0m";
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+  return h > 0 ? h + "h " + m + "m" : m + "m";
+}
+function fmtAgo(iso) {
+  if (!iso) return "never";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  return days + " days ago";
 }
 
 async function api(method, path, body) {
@@ -546,7 +570,8 @@ async function openClass(id) {
   data.roster.forEach(r => {
     const row = document.createElement("div");
     row.className = "list-item";
-    row.innerHTML = `<div><a class="link">${escapeHtml(r.username)}</a></div>`;
+    row.innerHTML = `<div><a class="link">${escapeHtml(r.username)}</a>
+        <div class="meta">Last active ${fmtAgo(r.last_active)} &middot; ${fmtDuration(r.secs_7d)} played this week &middot; ${fmtDuration(r.secs_total)} total</div></div>`;
     row.querySelector("a").onclick = () => openStudent(id, r.student_id, "view-class");
     rosterEl.appendChild(row);
   });
@@ -654,6 +679,34 @@ async function openStudent(classId, studentId, returnView) {
   document.getElementById("student-detail-name").textContent = data.student.username;
   document.getElementById("student-overall").textContent =
     `${data.overall.correct_count} / ${data.overall.attempts} correct overall (${pct(data.overall.correct_count, data.overall.attempts)})`;
+  const pl = data.play;
+  if (pl) {
+    const secs = ms => (ms / 1000).toFixed(1) + "s";
+    let line = `Last active ${fmtAgo(pl.last_active)} · ${fmtDuration(pl.secs_7d)} played in the last 7 days (${pl.sessions_7d} session${pl.sessions_7d === 1 ? "" : "s"}) · ${fmtDuration(pl.secs_total)} in total`;
+    if (pl.timed_answers > 0) {
+      line += ` · answers take ${secs(pl.avg_answer_ms)} on average`;
+      if (pl.avg_right_ms != null && pl.avg_wrong_ms != null) line += ` (${secs(pl.avg_right_ms)} when right, ${secs(pl.avg_wrong_ms)} when wrong)`;
+    }
+    document.getElementById("student-play").textContent = line;
+    // the last 14 days as bars
+    const byDay = {};
+    pl.days.forEach(d => { byDay[d.day] = d.seconds; });
+    const bars = document.getElementById("student-play-days");
+    bars.innerHTML = "";
+    const peak = Math.max(60, ...Object.values(byDay));
+    for (let i = 13; i >= 0; i--) {
+      const dt = new Date(Date.now() - i * 86400000);
+      const key = dt.toISOString().slice(0, 10);
+      const v = byDay[key] || 0;
+      const bar = document.createElement("div");
+      bar.style.cssText = "flex:1; min-width:6px; border-radius:2px 2px 0 0; background:" + (v > 0 ? "var(--accent, #5b8def)" : "var(--border, #ccc)") + "; height:" + Math.max(3, Math.round(50 * v / peak)) + "px";
+      bar.title = key + ": " + fmtDuration(v);
+      bars.appendChild(bar);
+    }
+    const names = { hub: "Town", interior: "Buildings and home", overworld: "Overworld", dungeon: "Dungeons", questions: "Answering questions", menu: "Menus", other: "Other" };
+    document.getElementById("student-play-areas").textContent = pl.areas.length === 0 ? "No play time recorded yet."
+      : "Last 30 days: " + pl.areas.map(a => (names[a.area] || a.area) + " " + fmtDuration(a.seconds)).join(" · ");
+  }
 
   const el = document.getElementById("student-sets");
   el.innerHTML = "";
@@ -760,6 +813,9 @@ document.getElementById("btn-admin-reset").onclick = async () => {
 
 // ---- admin account list (search + role filter + generate-password) ----
 let adminAccountRole = "";
+let adminAccountInactive = false;
+const adminSelected = new Set();   // account ids ticked for bulk delete
+let adminShownAccounts = [];
 let adminAccountSearchTimer = null;
 
 document.querySelectorAll("#admin-account-tabs button").forEach(btn => {
@@ -767,6 +823,8 @@ document.querySelectorAll("#admin-account-tabs button").forEach(btn => {
     document.querySelectorAll("#admin-account-tabs button").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     adminAccountRole = btn.dataset.role;
+    adminAccountInactive = btn.dataset.inactive === "1";
+    adminSelected.clear();
     refreshAdminAccounts();
   };
 });
@@ -781,17 +839,41 @@ async function refreshAdminAccounts() {
   const q = document.getElementById("admin-account-search").value.trim();
   const params = new URLSearchParams();
   if (adminAccountRole) params.set("role", adminAccountRole);
+  if (adminAccountInactive) params.set("inactive", "1");
   if (q) params.set("q", q);
   try {
     const data = await api("GET", "/api/teacher/admin/accounts?" + params.toString());
     const tbody = document.getElementById("admin-accounts-tbody");
     tbody.innerHTML = "";
+    document.getElementById("admin-tab-inactive").textContent = "Inactive " + data.inactive_days + "+ days (" + data.inactive_total + ")";
+    adminShownAccounts = data.accounts;
+    // forget ticks for accounts no longer shown
+    [...adminSelected].forEach(id => { if (!data.accounts.some(a => a.id === id)) adminSelected.delete(id); });
+    updateBulkBar();
     if (data.accounts.length === 0) {
-      tbody.innerHTML = "<tr><td colspan='3'><em>No accounts match.</em></td></tr>";
+      tbody.innerHTML = "<tr><td colspan='6'><em>No accounts match.</em></td></tr>";
       return;
     }
     data.accounts.forEach(acc => {
       const tr = document.createElement("tr");
+      const tdPick = document.createElement("td");
+      if (!acc.is_admin && !isTestAccountName(acc.username)) {
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = adminSelected.has(acc.id);
+        cb.onchange = () => { if (cb.checked) adminSelected.add(acc.id); else adminSelected.delete(acc.id); updateBulkBar(); };
+        tdPick.appendChild(cb);
+      }
+      const tdSeen = document.createElement("td");
+      tdSeen.textContent = fmtAgo(acc.last_active);
+      if (acc.inactive) {
+        const tag = document.createElement("span");
+        tag.textContent = " inactive";
+        tag.style.cssText = "color:#fff; background:var(--danger, #c0392b); font-size:11px; padding:1px 6px; border-radius:8px; margin-left:6px";
+        tdSeen.appendChild(tag);
+      }
+      const tdPlay = document.createElement("td");
+      tdPlay.textContent = fmtDuration(acc.secs_total);
       const typeLabel = acc.is_admin ? "Admin" : (acc.role === "teacher" ? "Teacher" : "Student");
       const genBtn = document.createElement("button");
       genBtn.className = "secondary";
@@ -812,7 +894,7 @@ async function refreshAdminAccounts() {
         delBtn.onclick = () => deleteAccount(acc);
         tdAction.appendChild(delBtn);
       }
-      tr.append(tdUser, tdType, tdAction);
+      tr.append(tdPick, tdUser, tdType, tdSeen, tdPlay, tdAction);
       tbody.appendChild(tr);
     });
   } catch (e) {
@@ -834,6 +916,49 @@ async function generateAccountPassword(accUsername) {
 
 // Permanent. Makes you type the username back so a mis-click on the wrong row can't delete anyone;
 // a teacher account also removes their classes and question sets (the warning says so).
+// Milestone 274: bulk delete of accounts flagged inactive (the server re-checks each one and skips anything protected)
+function isTestAccountName(name) { return ["test", "mrlooms"].includes(String(name).toLowerCase()); }
+
+function updateBulkBar() {
+  const bar = document.getElementById("admin-bulk-bar");
+  bar.classList.toggle("hidden", !adminAccountInactive && adminSelected.size === 0);
+  document.getElementById("admin-bulk-count").textContent = adminSelected.size + " selected";
+  document.getElementById("btn-bulk-delete").disabled = adminSelected.size === 0;
+}
+
+document.getElementById("btn-bulk-select-all").onclick = () => {
+  adminShownAccounts.forEach(a => { if (!a.is_admin && !isTestAccountName(a.username)) adminSelected.add(a.id); });
+  document.querySelectorAll("#admin-accounts-tbody input[type=checkbox]").forEach(cb => { cb.checked = true; });
+  updateBulkBar();
+};
+
+document.getElementById("btn-bulk-delete").onclick = async () => {
+  setError("admin-accounts-error", "");
+  const picked = adminShownAccounts.filter(a => adminSelected.has(a.id));
+  if (picked.length === 0) return;
+  const teachers = picked.filter(a => a.role === "teacher").length;
+  const notInactive = picked.filter(a => !a.inactive).length;
+  let msg = `Permanently delete ${picked.length} account${picked.length === 1 ? "" : "s"} and all their characters, progress and history? This cannot be undone.`;
+  if (teachers > 0) msg += `\n\n${teachers} of them ${teachers === 1 ? "is a TEACHER account" : "are TEACHER accounts"}: their classes, question sets and questions are deleted too.`;
+  if (notInactive > 0) msg += `\n\n${notInactive} ${notInactive === 1 ? "is" : "are"} not flagged inactive - the server will skip ${notInactive === 1 ? "it" : "them"}.`;
+  msg += "\n\nFirst few: " + picked.slice(0, 8).map(a => a.username).join(", ") + (picked.length > 8 ? ", ..." : "");
+  msg += "\n\nType DELETE to confirm:";
+  const typed = prompt(msg);
+  if (typed === null) return;
+  if (typed.trim() !== "DELETE") return setError("admin-accounts-error", "That wasn't DELETE - nothing was deleted.");
+  try {
+    const res = await api("POST", "/api/teacher/admin/accounts/delete-inactive", { ids: picked.map(a => a.id), confirm: "DELETE" });
+    adminSelected.clear();
+    const successEl = document.getElementById("admin-generate-success");
+    successEl.textContent = "Deleted " + res.deleted.length + " account" + (res.deleted.length === 1 ? "" : "s") + "." +
+      (res.skipped.length ? " Skipped " + res.skipped.length + ": " + res.skipped.map(x => x.username + " (" + x.reason + ")").join(", ") : "");
+    successEl.classList.remove("hidden");
+    refreshAdminAccounts();
+  } catch (e) {
+    setError("admin-accounts-error", e.message);
+  }
+};
+
 async function deleteAccount(acc) {
   const extra = acc.role === "teacher"
     ? "\n\nThis is a TEACHER account: their classes, question sets and questions are deleted too, and their students are removed from those classes."
