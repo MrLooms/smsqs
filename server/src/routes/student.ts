@@ -7,7 +7,7 @@ import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import { inSameParty } from "../party";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
-  DEFAULT_NAMES, incubateMs, BOOST_MS, MAX_COLLECTION,
+  DEFAULT_NAMES, incubateMs, BOOST_MS, MAX_COLLECTION, LorekinEntry, newEntry, addXp, xpNext, rarityOf,
 } from "../lorekin";
 import { requireAuth, requireRole, AuthedRequest } from "../auth";
 import { ah } from "../asyncHandler";
@@ -394,13 +394,13 @@ router.post("/lorekin/boost", requireAuth, requireRole("student"), ah(async (req
 }));
 
 router.post("/lorekin/hatch", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
-  let hatched: { id: number; species: string; name: string } | null = null;
+  let hatched: LorekinEntry | null = null;
   const out = await lorekinMutate(req.userId!, (st) => {
     if (!st.incubator) return "Nothing is incubating";
     if (st.incubator.ready_at > Date.now()) return "Not ready yet";
     if (st.list.length >= MAX_COLLECTION) return "Your Lorekin collection is full";
     const species = pickSpecies(st.incubator.rarity);
-    hatched = { id: st.next_id, species, name: DEFAULT_NAMES[species] ?? species };
+    hatched = newEntry(st.next_id, species);
     st.next_id += 1;
     st.list.push(hatched);
     if (st.active == null) st.active = hatched.id; // the first one hatched starts out as your companion
@@ -408,6 +408,23 @@ router.post("/lorekin/hatch", requireAuth, requireRole("student"), ah(async (req
   });
   if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
   res.json({ ok: true, hatched, lorekin: out.state });
+}));
+
+// Milestone 294: combat XP for a Lorekin. The game batches what its ACTIVE Lorekin earned from kills and sends it here every so often;
+// the server runs the level curve (xpNext) and answers with the new state. A single call is capped (a stale or hacked client can't
+// dump an unlimited amount in one go).
+router.post("/lorekin/xp", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const id = Number(req.body?.id);
+  const amount = Math.floor(Number(req.body?.xp));
+  if (!Number.isInteger(id) || !Number.isFinite(amount) || amount <= 0) return res.json({ ok: false, error: "Bad XP" });
+  const out = await lorekinMutate(req.userId!, (st) => {
+    const e = st.list.find((x) => x.id === id);
+    if (!e) return "No such Lorekin";
+    const cap = 20 * xpNext(e.level, rarityOf(e.species));
+    addXp(e, Math.min(amount, cap));
+  });
+  if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
+  res.json({ ok: true, lorekin: out.state });
 }));
 
 router.post("/lorekin/rename", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {

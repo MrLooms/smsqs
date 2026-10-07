@@ -28,10 +28,69 @@ export const BOOST_MS = 6 * 60 * 60 * 1000; // one Knowledge Crystal charge
 export const MAX_COLLECTION = 60;
 export const MAX_NAME_LEN = 14;
 
+// ---- Milestone 294: Lorekin LEVEL up. Every Lorekin starts at level 1 and levels from combat XP (the client sends the XP its active
+// Lorekin earned; the server turns it into levels with the curve below, so levels are decided here, never trusted from the client).
+// The curve is the player's own XP curve times a rarity multiplier - rarer Lorekin are a bigger commitment (and hit harder per level,
+// see scr_lorekin.gml). KEEP IN SYNC with lorekin_xp_next() in scr_lorekin.gml (same constants).
+export const MAX_LOREKIN_LEVEL = 99;
+export const XP_RARITY_MULT = [1.0, 1.4, 1.9, 2.6];
+
+export function rarityOf(species: string): number {
+  for (let r = 0; r < SPECIES_BY_RARITY.length; r++) if (SPECIES_BY_RARITY[r].includes(species)) return r;
+  return 0;
+}
+
+export function xpNext(level: number, rarity: number): number {
+  const lv = Math.max(1, Math.min(MAX_LOREKIN_LEVEL, level));
+  const base = Math.max(1, Math.round(Math.min(75 * Math.pow(1.35, lv - 1), 15.5 * lv * lv + 31 * lv)));
+  return Math.max(1, Math.round(base * XP_RARITY_MULT[Math.max(0, Math.min(3, rarity))]));
+}
+
+// Support Lorekin (healers and mana) roll from a different set of natures than attackers; "steady" is in both.
+export const SUPPORT_SPECIES = new Set(["cat", "dragonfly", "crab", "satyr"]);
+export const NATURES_ATTACK = ["fierce", "swift", "keen", "steady"];
+export const NATURES_SUPPORT = ["gentle", "quick", "attentive", "steady"];
+
+export function naturesFor(species: string): string[] {
+  return SUPPORT_SPECIES.has(species) ? NATURES_SUPPORT : NATURES_ATTACK;
+}
+
+export function rollNature(species: string): string {
+  const pool = naturesFor(species);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// a stable nature for a Lorekin hatched before natures existed (so repeated reads agree until it is saved)
+function defaultNature(id: number, species: string): string {
+  const pool = naturesFor(species);
+  return pool[(id * 7 + species.length) % pool.length];
+}
+
 export interface LorekinEntry {
   id: number;
   species: string;
   name: string;
+  level: number;   // 1..99
+  xp: number;      // progress into the current level
+  nature: string;  // a small personality that tweaks its stats (see scr_lorekin.gml lorekin_nature)
+}
+
+// Adds combat XP to one Lorekin, levelling it up as far as the XP goes (stops at the cap).
+export function addXp(e: LorekinEntry, amount: number) {
+  if (e.level >= MAX_LOREKIN_LEVEL) { e.xp = 0; return; }
+  const rarity = rarityOf(e.species);
+  e.xp += Math.max(0, Math.floor(amount));
+  while (e.level < MAX_LOREKIN_LEVEL) {
+    const need = xpNext(e.level, rarity);
+    if (e.xp < need) break;
+    e.xp -= need;
+    e.level += 1;
+  }
+  if (e.level >= MAX_LOREKIN_LEVEL) e.xp = 0;
+}
+
+export function newEntry(id: number, species: string): LorekinEntry {
+  return { id, species, name: DEFAULT_NAMES[species] ?? species, level: 1, xp: 0, nature: rollNature(species) };
 }
 
 export interface LorekinState {
@@ -48,8 +107,16 @@ export function parseState(json: string | null | undefined): LorekinState {
   if (!json) return { ...EMPTY_STATE, list: [] };
   try {
     const s = JSON.parse(json);
+    const list: LorekinEntry[] = Array.isArray(s.list) ? s.list : [];
+    // Lorekin from before levels existed: level 1, no XP, and a stable nature
+    for (const e of list) {
+      if (!Number.isInteger(e.level) || e.level < 1) e.level = 1;
+      if (e.level > MAX_LOREKIN_LEVEL) e.level = MAX_LOREKIN_LEVEL;
+      if (!Number.isFinite(e.xp) || e.xp < 0) e.xp = 0;
+      if (typeof e.nature !== "string" || !naturesFor(e.species).includes(e.nature)) e.nature = defaultNature(e.id, e.species);
+    }
     return {
-      list: Array.isArray(s.list) ? s.list : [],
+      list,
       active: typeof s.active === "number" ? s.active : null,
       next_id: typeof s.next_id === "number" ? s.next_id : 1,
       incubator: s.incubator && typeof s.incubator.ready_at === "number" ? s.incubator : null,
@@ -64,7 +131,8 @@ export function parseState(json: string | null | undefined): LorekinState {
 export function toClient(s: LorekinState) {
   const now = Date.now();
   return {
-    list: s.list,
+    // each entry also carries xp_next (what it needs for its next level) so the game never has to agree with the curve to draw a bar
+    list: s.list.map((e) => ({ ...e, xp_next: e.level >= MAX_LOREKIN_LEVEL ? 0 : xpNext(e.level, rarityOf(e.species)) })),
     active: s.active,
     incubator: s.incubator
       ? { rarity: s.incubator.rarity, ready_in_s: Math.max(0, Math.ceil((s.incubator.ready_at - now) / 1000)) }
@@ -93,7 +161,7 @@ export function fillAllSpecies(st: LorekinState): boolean {
   for (const pool of SPECIES_BY_RARITY) {
     for (const species of pool) {
       if (st.list.some((e) => e.species === species)) continue;
-      st.list.push({ id: st.next_id, species, name: DEFAULT_NAMES[species] ?? species });
+      st.list.push(newEntry(st.next_id, species));
       st.next_id += 1;
       changed = true;
     }
