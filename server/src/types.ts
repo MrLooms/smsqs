@@ -64,7 +64,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
   skin: "light",
   hair: "plain_auburn",
   hair_color: "orange",
-  torso: "leather",
+  torso: "clothes_shortsleeve_tshirt",
   torso_color: "",
   legs: "pants",
   legs_color: "",
