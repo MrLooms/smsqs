@@ -93,7 +93,7 @@ async function createDefaultCharacter(userId: number) {
 }
 
 app.post("/api/register", ah(async (req, res) => {
-  const { username, password } = req.body ?? {};
+  const { username, password, join_code } = req.body ?? {};
   if (typeof username !== "string" || username.trim().length < 3) {
     return res.status(400).json({ error: "Username must be at least 3 characters" });
   }
@@ -112,6 +112,15 @@ app.post("/api/register", ah(async (req, res) => {
     return res.status(409).json({ error: "Username already taken" });
   }
 
+  // Milestone 288: an optional class code to join right at sign-up. It is checked BEFORE the account is created: a code that
+  // matches no class refuses the whole registration (nothing is created) so the player can fix it or leave it blank. A plain
+  // 200 {ok:false} like the other logic errors - GX.games hides non-2xx bodies, so a 4xx could not carry the message.
+  let joinClass: { id: number; name: string } | undefined;
+  if (typeof join_code === "string" && join_code.trim().length > 0) {
+    joinClass = await dbGet<{ id: number; name: string }>("SELECT id, name FROM classes WHERE join_code = ?", [join_code.trim().toUpperCase()]);
+    if (!joinClass) return res.json({ ok: false, error: "No class has that code - check it, or leave it blank" });
+  }
+
   const passwordHash = bcrypt.hashSync(password, 10);
   const userId = await dbInsertId(
     "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'student')",
@@ -119,6 +128,11 @@ app.post("/api/register", ah(async (req, res) => {
   );
 
   await createDefaultCharacter(userId);
+  if (joinClass) {
+    // same as POST /api/classes/join for a first-ever class: a member, and their active class
+    await dbRun("INSERT INTO class_members (class_id, student_id) VALUES (?, ?) ON CONFLICT (class_id, student_id) DO NOTHING", [joinClass.id, userId]);
+    await dbRun("UPDATE users SET active_class_id = ? WHERE id = ? AND active_class_id IS NULL", [joinClass.id, userId]);
+  }
 
   const token = generateToken();
   await dbRun("INSERT INTO sessions (token, user_id) VALUES (?, ?)", [token, userId]);
