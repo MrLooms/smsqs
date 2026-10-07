@@ -103,6 +103,27 @@
   table.stats th { color: var(--muted); font-weight: 600; }
   .accuracy-good { color: var(--ok); }
   .accuracy-bad { color: var(--danger); }
+
+  .hint { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
+  .meta-line { color: var(--muted); font-size: 13px; }
+  .class-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .join-code.small { font-size: 16px; padding: 3px 10px; letter-spacing: 2px; }
+  .tabs { flex-wrap: wrap; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 8px; }
+  .tile { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .tile .num { font-size: 24px; font-weight: 700; }
+  .tile .lbl { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 10px; color: #14161c; }
+  .chip.high { background: var(--danger); }
+  .chip.watch { background: var(--accent-2); }
+  .bar { display: inline-block; width: 90px; height: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; vertical-align: middle; overflow: hidden; }
+  .bar > span { display: block; height: 100%; }
+  .weekly { display: flex; align-items: flex-end; gap: 8px; min-height: 100px; }
+  .wk { flex: 1; text-align: center; min-width: 30px; }
+  .wk-bar { border-radius: 3px 3px 0 0; margin: 2px auto 0; width: 70%; }
+  .wk-val { font-size: 11px; color: var(--muted); height: 14px; }
+  .wk-lbl { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  main { max-width: 1000px; }
 </style>
 </head>
 <body>
@@ -194,6 +215,10 @@
     <div class="error hidden" id="set-error"></div>
   </div>
 
+</section>
+
+<!-- ACCOUNT VIEW -->
+<section id="view-account" class="hidden">
   <div class="card" id="my-password-card">
     <h2>Change my password</h2>
     <div class="row">
@@ -244,86 +269,138 @@
 
 </section>
 
-<!-- CLASS DETAIL VIEW -->
-<section id="view-class" class="card hidden">
-  <a class="link" id="class-back">&larr; Back to dashboard</a>
-  <h2 id="class-detail-name"></h2>
-  <p>Students join with this code:</p>
-  <div class="join-code" id="class-detail-code"></div>
-
-  <div class="row" style="margin:10px 0">
-    <button class="secondary" id="btn-view-analytics">View analytics</button>
+<!-- CLASS DETAIL VIEW (tabs) -->
+<section id="view-class" class="hidden">
+  <div class="card" style="margin-bottom:12px">
+    <a class="link" id="class-back">&larr; Back to dashboard</a>
+    <div class="class-head">
+      <h2 id="class-detail-name" style="margin:8px 0"></h2>
+      <div class="meta-line">Students join with code <span class="join-code small" id="class-detail-code"></span></div>
+    </div>
+    <div class="tabs" id="class-tabs" style="margin:12px 0 0">
+      <button data-tab="overview" class="active">Overview</button>
+      <button data-tab="students">Students</button>
+      <button data-tab="learning">Learning</button>
+      <button data-tab="onboarding">Onboarding</button>
+      <button data-tab="settings">Settings</button>
+    </div>
   </div>
 
-  <h3>Roster</h3>
-  <div id="class-roster"><em>No students yet.</em></div>
+  <div class="card tabpane" id="tab-overview">
+    <div class="tiles" id="overview-tiles"></div>
+    <h3>Students who need help</h3>
+    <p class="hint">Flags come from answers, answer speed and play activity. They are a prompt to check in, not a grade.</p>
+    <div id="overview-attention"></div>
+    <h3>Topics to revisit</h3>
+    <p class="hint">Topics where the class, or a good share of it, is getting answers wrong.</p>
+    <div id="overview-topics"></div>
+  </div>
 
-  <h3>Basic Training</h3>
-  <p style="color:var(--muted); font-size:13px">New students play a short guided training on their first login. Reset sends a student (or everyone) back through it.</p>
-  <div id="class-training"></div>
-  <div class="row" style="margin-top:10px"><button class="secondary" id="btn-training-reset-all">Reset training for the whole class</button></div>
+  <div class="card tabpane hidden" id="tab-students">
+    <p class="hint">Click a column to sort. Click a name for that student's detail.</p>
+    <table class="stats" id="students-table">
+      <thead><tr>
+        <th data-sort="username">Student</th><th data-sort="attempts">Answers</th><th data-sort="accuracy">Accuracy</th>
+        <th data-sort="accuracy_7d">This week</th><th data-sort="secs_7d">Played (7d)</th><th data-sort="days_since_active">Last active</th><th data-sort="attention">Flags</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="class-roster" class="hidden"></div>
+  </div>
 
-  <h3>Assigned question sets</h3>
-  <div id="class-assigned"></div>
-  <div class="row" style="margin-top:10px">
-    <select id="assign-set-select"></select>
-    <button id="btn-assign-set">Assign</button>
+  <div class="card tabpane hidden" id="tab-learning">
+    <h3 style="margin-top:0">Topics</h3>
+    <p class="hint">Weakest first. "Struggling" counts students under 50% on the topic (3+ answers).</p>
+    <table class="stats" id="topics-table">
+      <thead><tr><th>Topic</th><th>Answers</th><th style="width:30%">Accuracy</th><th>Students</th><th>Struggling</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <h3>Class accuracy by week</h3>
+    <div id="weekly-bars" class="weekly"></div>
+    <h3>By question</h3>
+    <p class="hint">Lowest % correct first. Questions with few answers are noisy - read them with care.</p>
+    <table class="stats" id="analytics-questions-table">
+      <thead><tr><th>Question</th><th>Topic</th><th>Answers</th><th>% Correct</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card tabpane hidden" id="tab-onboarding">
+    <h3 style="margin-top:0">Basic Training</h3>
+    <p class="hint">New students play a short guided training on their first login. Reset sends a student (or everyone) back through it.</p>
+    <div id="class-training"></div>
+    <div class="row" style="margin-top:10px"><button class="secondary" id="btn-training-reset-all">Reset training for the whole class</button></div>
+  </div>
+
+  <div class="card tabpane hidden" id="tab-settings">
+    <h3 style="margin-top:0">Assigned question sets</h3>
+    <div id="class-assigned"></div>
+    <div class="row" style="margin-top:10px">
+      <select id="assign-set-select"></select>
+      <button id="btn-assign-set">Assign</button>
+    </div>
   </div>
 </section>
 
-<!-- CLASS ANALYTICS VIEW -->
-<section id="view-analytics" class="card hidden">
-  <a class="link" id="analytics-back">&larr; Back to class</a>
-  <h2 id="analytics-class-name"></h2>
-  <p style="color:var(--muted); font-size:13px">
-    Game behaviour, not a formal assessment — a quick read on who's engaging and which
-    questions are landing, not a grade.
-  </p>
-
-  <h3>By student</h3>
-  <table class="stats" id="analytics-students-table">
-    <thead><tr><th>Student</th><th>Attempted</th><th>Correct</th><th>Accuracy</th></tr></thead>
-    <tbody></tbody>
-  </table>
-
-  <h3>By question</h3>
-  <table class="stats" id="analytics-questions-table">
-    <thead><tr><th>Question</th><th>Topic</th><th>Attempts</th><th>% Correct</th></tr></thead>
-    <tbody></tbody>
-  </table>
-</section>
-
-<!-- STUDENT DETAIL VIEW -->
-<section id="view-student" class="card hidden">
-  <a class="link" id="student-back">&larr; Back</a>
-  <h2 id="student-detail-name"></h2>
-  <p id="student-overall" style="color:var(--muted); font-size:13px"></p>
-  <p id="student-play" style="color:var(--muted); font-size:13px"></p>
-  <div id="student-play-days" style="display:flex; align-items:flex-end; gap:3px; height:54px; margin-bottom:6px"></div>
-  <p id="student-play-areas" style="color:var(--muted); font-size:12px"></p>
-  <div id="student-sets"></div>
-
-  <h3>Reset Password</h3>
-  <p style="color:var(--muted); font-size:13px">
-    Sets this student's password directly - there's no email on file to send a reset link to,
-    so this IS the recovery path. Tell them the new password yourself afterward.
-  </p>
-  <div class="row">
-    <input id="reset-pw-input" type="text" placeholder="New password (4+ characters)">
-    <button class="danger" id="btn-reset-password">Reset Password</button>
+<!-- STUDENT DETAIL VIEW (tabs) -->
+<section id="view-student" class="hidden">
+  <div class="card" style="margin-bottom:12px">
+    <a class="link" id="student-back">&larr; Back to class</a>
+    <h2 id="student-detail-name" style="margin:8px 0"></h2>
+    <div class="tabs" id="student-tabs" style="margin:12px 0 0">
+      <button data-tab="summary" class="active">Summary</button>
+      <button data-tab="questions">Questions</button>
+      <button data-tab="activity">Activity</button>
+      <button data-tab="actions">Actions</button>
+    </div>
   </div>
-  <div class="error hidden" id="reset-pw-error"></div>
-  <div class="ok-msg hidden" id="reset-pw-success"></div>
 
-  <h3>Remove from Class</h3>
-  <p style="color:var(--muted); font-size:13px">
-    Removes this student from this class only - their account, characters, and any other
-    classes they're in are untouched. They can rejoin later with the class code if needed.
-  </p>
-  <div class="row">
-    <button class="danger" id="btn-remove-student">Remove from Class</button>
+  <div class="card tabpane" id="stab-summary">
+    <div id="student-flags"></div>
+    <p id="student-overall" class="hint"></p>
+    <h3>Accuracy by week</h3>
+    <div id="student-weekly" class="weekly"></div>
+    <h3>Topics</h3>
+    <p class="hint">Weakest first.</p>
+    <table class="stats" id="student-topics-table">
+      <thead><tr><th>Topic</th><th>Answers</th><th style="width:40%">Accuracy</th></tr></thead>
+      <tbody></tbody>
+    </table>
   </div>
-  <div class="error hidden" id="remove-student-error"></div>
+
+  <div class="card tabpane hidden" id="stab-questions">
+    <div id="student-sets"></div>
+  </div>
+
+  <div class="card tabpane hidden" id="stab-activity">
+    <p id="student-play" class="hint"></p>
+    <div id="student-play-days" style="display:flex; align-items:flex-end; gap:3px; height:54px; margin-bottom:6px"></div>
+    <p id="student-play-areas" class="hint"></p>
+  </div>
+
+  <div class="card tabpane hidden" id="stab-actions">
+    <h3 style="margin-top:0">Reset Password</h3>
+    <p class="hint">
+      Sets this student's password directly - there's no email on file to send a reset link to,
+      so this IS the recovery path. Tell them the new password yourself afterward.
+    </p>
+    <div class="row">
+      <input id="reset-pw-input" type="text" placeholder="New password (4+ characters)">
+      <button class="danger" id="btn-reset-password">Reset Password</button>
+    </div>
+    <div class="error hidden" id="reset-pw-error"></div>
+    <div class="ok-msg hidden" id="reset-pw-success"></div>
+
+    <h3>Remove from Class</h3>
+    <p class="hint">
+      Removes this student from this class only - their account, characters, and any other
+      classes they're in are untouched. They can rejoin later with the class code if needed.
+    </p>
+    <div class="row">
+      <button class="danger" id="btn-remove-student">Remove from Class</button>
+    </div>
+    <div class="error hidden" id="remove-student-error"></div>
+  </div>
 </section>
 
 <!-- QUESTION SET EDITOR VIEW -->
@@ -389,7 +466,7 @@ let currentClassId = null;
 let currentStudentId = null;
 
 function show(id) {
-  ["view-auth", "view-register", "view-forgot", "view-reset-token", "view-dashboard", "view-class", "view-analytics", "view-student", "view-set"].forEach(v => {
+  ["view-auth", "view-register", "view-forgot", "view-reset-token", "view-dashboard", "view-account", "view-class", "view-student", "view-set"].forEach(v => {
     document.getElementById(v).classList.toggle("hidden", v !== id);
   });
 }
@@ -473,8 +550,10 @@ function logout() {
 async function enterDashboard() {
   document.getElementById("whoami").textContent = username + " · " +
     '<a class="link" onclick="logout()">log out</a>'.replace(/<[^>]+>/g, m => m); // keep text simple below
-  document.getElementById("whoami").innerHTML = username + ' &middot; <a class="link" id="logout-link">log out</a>';
+  document.getElementById("whoami").innerHTML = escapeHtml(username) + ' &middot; <a class="link" id="nav-dash">Dashboard</a> &middot; <a class="link" id="nav-account">Account</a> &middot; <a class="link" id="logout-link">log out</a>';
   document.getElementById("logout-link").onclick = logout;
+  document.getElementById("nav-dash").onclick = () => { show("view-dashboard"); refreshClasses(); refreshSets(); };
+  document.getElementById("nav-account").onclick = () => { show("view-account"); if (isAdmin) refreshAdminAccounts(); };
   document.getElementById("admin-reset-card").classList.toggle("hidden", !isAdmin);
   show("view-dashboard");
   const refreshes = [refreshClasses(), refreshSets()];
@@ -496,7 +575,7 @@ async function refreshClasses() {
     const btn = document.createElement("button");
     btn.className = "secondary";
     btn.textContent = "Manage";
-    btn.onclick = () => openClass(c.id);
+    btn.onclick = () => openClass(c.id, "overview");
     row.appendChild(btn);
     el.appendChild(row);
   });
@@ -560,27 +639,97 @@ document.getElementById("btn-create-set").onclick = async () => {
   } catch (e) { setError("set-error", e.message); }
 };
 
-// ---- class detail ----
+// ---- class detail (tabs: Overview / Students / Learning / Onboarding / Settings) ----
 document.getElementById("class-back").onclick = () => { show("view-dashboard"); refreshClasses(); };
 
-async function openClass(id) {
+let currentClassTab = "overview";
+let studentReturnTab = "students";
+let insightsCache = null;
+let studentSort = { key: "attention", dir: -1 };
+
+function pct(correct, attempts) {
+  if (attempts === 0) return "—";
+  return Math.round((correct / attempts) * 100) + "%";
+}
+
+function accuracyClass(correct, attempts) {
+  if (attempts === 0) return "";
+  const r = correct / attempts;
+  return r >= 0.7 ? "accuracy-good" : (r < 0.4 ? "accuracy-bad" : "");
+}
+
+function fmtPct(x) { return x === null || x === undefined ? "—" : Math.round(x * 100) + "%"; }
+
+// a little horizontal bar with the percentage beside it
+function accBar(x) {
+  if (x === null || x === undefined) return "—";
+  const col = x >= 0.7 ? "var(--ok)" : (x < 0.5 ? "var(--danger)" : "var(--accent-2)");
+  return `<span class="bar"><span style="width:${Math.round(x * 100)}%; background:${col}"></span></span> ${Math.round(x * 100)}%`;
+}
+
+function flagChips(flags, withDetail) {
+  return flags.map(f => `<span class="chip ${f.level}" title="${escapeHtml(f.detail)}">${escapeHtml(f.label)}</span>` +
+    (withDetail ? ` <span class="meta">${escapeHtml(f.detail)}</span>` : "")).join(withDetail ? "<br>" : " ");
+}
+
+// show one tab of a tab bar and hide the others' panes (pane id = prefix + tab name)
+function selectTab(tabsId, prefix, name) {
+  document.querySelectorAll("#" + tabsId + " button").forEach(b => {
+    b.classList.toggle("active", b.dataset.tab === name);
+    document.getElementById(prefix + b.dataset.tab).classList.toggle("hidden", b.dataset.tab !== name);
+  });
+}
+document.querySelectorAll("#class-tabs button").forEach(b => {
+  b.onclick = () => { currentClassTab = b.dataset.tab; selectTab("class-tabs", "tab-", currentClassTab); };
+});
+document.querySelectorAll("#student-tabs button").forEach(b => {
+  b.onclick = () => selectTab("student-tabs", "stab-", b.dataset.tab);
+});
+
+// the last 8 weeks as bars (height = accuracy, label = answers); weeks: [{ week: "YYYY-MM-DD" (a Monday), attempts, correct }]
+function renderWeekly(el, weeks) {
+  el.innerHTML = "";
+  const by = {};
+  weeks.forEach(w => { by[w.week] = w; });
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); // this week's Monday
+  let any = false;
+  const cols = [];
+  for (let i = 7; i >= 0; i--) {
+    const k = new Date(d.getTime() - i * 7 * 86400000).toISOString().slice(0, 10);
+    const w = by[k];
+    if (w && w.attempts > 0) any = true;
+    cols.push({ key: k, w });
+  }
+  if (!any) { el.innerHTML = "<em class='hint'>No answers recorded in the last 8 weeks.</em>"; return; }
+  cols.forEach(c => {
+    const acc = c.w && c.w.attempts > 0 ? c.w.correct / c.w.attempts : null;
+    const col = document.createElement("div");
+    col.className = "wk";
+    const colour = acc === null ? "var(--border)" : (acc >= 0.7 ? "var(--ok)" : (acc < 0.5 ? "var(--danger)" : "var(--accent-2)"));
+    col.innerHTML = `<div class="wk-val">${acc === null ? "" : Math.round(acc * 100) + "%"}</div>
+      <div class="wk-bar" style="height:${acc === null ? 3 : Math.max(4, Math.round(acc * 70))}px; background:${colour}" title="${c.key}: ${c.w ? c.w.attempts : 0} answers"></div>
+      <div class="wk-lbl">${c.key.slice(5)}</div>`;
+    el.appendChild(col);
+  });
+}
+
+async function openClass(id, tab) {
   currentClassId = id;
-  const data = await api("GET", "/api/teacher/classes/" + id);
+  if (tab) currentClassTab = tab;
+  const [data, ins, an] = await Promise.all([
+    api("GET", "/api/teacher/classes/" + id),
+    api("GET", `/api/teacher/classes/${id}/insights`),
+    api("GET", `/api/teacher/classes/${id}/analytics`),
+  ]);
+  insightsCache = ins;
   document.getElementById("class-detail-name").textContent = data.class.name;
   document.getElementById("class-detail-code").textContent = data.class.join_code;
 
-  const rosterEl = document.getElementById("class-roster");
-  rosterEl.innerHTML = "";
-  if (data.roster.length === 0) rosterEl.innerHTML = "<em>No students yet.</em>";
-  data.roster.forEach(r => {
-    const row = document.createElement("div");
-    row.className = "list-item";
-    row.innerHTML = `<div><a class="link">${escapeHtml(r.username)}</a>
-        <div class="meta">Last active ${fmtAgo(r.last_active)} &middot; ${fmtDuration(r.secs_7d)} played this week &middot; ${fmtDuration(r.secs_total)} total</div></div>`;
-    row.querySelector("a").onclick = () => openStudent(id, r.student_id, "view-class");
-    rosterEl.appendChild(row);
-  });
-
+  renderOverview(ins);
+  renderStudentsTable();
+  renderLearning(ins, an);
   loadTraining(id);
 
   const assignedEl = document.getElementById("class-assigned");
@@ -610,18 +759,119 @@ async function openClass(id) {
     opt.textContent = s.title;
     select.appendChild(opt);
   });
-
   document.getElementById("btn-assign-set").onclick = async () => {
     if (!select.value) return;
     await api("POST", `/api/teacher/classes/${id}/assign`, { question_set_id: Number(select.value) });
     openClass(id);
   };
 
+  selectTab("class-tabs", "tab-", currentClassTab);
   show("view-class");
 }
 
-// ---- Basic Training progress (Milestone 297) ----
-const TRAINING_STEP_NAMES = {};
+function renderOverview(ins) {
+  const s = ins.summary;
+  const tiles = [
+    [s.students, "students"],
+    [s.needs_attention, "need a check-in"],
+    [s.attempts_7d, "answers this week"],
+    [fmtPct(s.accuracy_7d), "accuracy this week"],
+    [s.active_students_7d + " / " + s.students, "active this week"],
+  ];
+  document.getElementById("overview-tiles").innerHTML = tiles.map(t => `<div class="tile"><div class="num">${t[0]}</div><div class="lbl">${t[1]}</div></div>`).join("");
+
+  const att = document.getElementById("overview-attention");
+  att.innerHTML = "";
+  const flagged = ins.students.filter(x => x.flags.length > 0).sort((a, b) => b.attention - a.attention || a.username.localeCompare(b.username));
+  if (ins.students.length === 0) att.innerHTML = "<em>No students yet.</em>";
+  else if (flagged.length === 0) att.innerHTML = "<em>Nobody is flagged right now.</em>";
+  flagged.forEach(x => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `<div><a class="link">${escapeHtml(x.username)}</a><div style="margin-top:4px">${flagChips(x.flags, true)}</div></div>
+      <div class="meta" style="text-align:right">${fmtPct(x.accuracy)} overall<br>last active ${fmtAgo(x.last_active)}</div>`;
+    row.querySelector("a").onclick = () => openStudent(currentClassId, x.student_id, "overview");
+    att.appendChild(row);
+  });
+
+  const tp = document.getElementById("overview-topics");
+  tp.innerHTML = "";
+  const hot = ins.topics.filter(t => t.flag !== "");
+  if (ins.topics.length === 0) tp.innerHTML = "<em>No answers recorded yet.</em>";
+  else if (hot.length === 0) tp.innerHTML = "<em>No topic is a worry right now.</em>";
+  hot.forEach(t => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `<div><strong>${escapeHtml(t.topic)}</strong> <span class="chip ${t.flag === "reteach" ? "high" : "watch"}">${t.flag === "reteach" ? "Revisit" : "Watch"}</span>
+      <div class="meta">${escapeHtml(t.note)}</div></div><div>${accBar(t.accuracy)}<div class="meta" style="text-align:right">${t.attempts} answers</div></div>`;
+    tp.appendChild(row);
+  });
+}
+
+function renderStudentsTable() {
+  if (!insightsCache) return;
+  const body = document.querySelector("#students-table tbody");
+  body.innerHTML = "";
+  const list = insightsCache.students.slice();
+  const k = studentSort.key, dir = studentSort.dir;
+  list.sort((a, b) => {
+    const av = a[k], bv = b[k];
+    if (k === "username") return dir * String(av).localeCompare(String(bv));
+    // empty values (no answers yet) always sort last
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    return dir * (av - bv) || a.username.localeCompare(b.username);
+  });
+  if (list.length === 0) body.innerHTML = "<tr><td colspan='7'><em>No students yet.</em></td></tr>";
+  list.forEach(x => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><a class="link">${escapeHtml(x.username)}</a></td><td>${x.attempts}</td><td>${accBar(x.accuracy)}</td>
+      <td>${x.attempts_7d > 0 ? fmtPct(x.accuracy_7d) + " <span class='meta'>(" + x.attempts_7d + ")</span>" : "—"}</td>
+      <td>${fmtDuration(x.secs_7d)}</td><td>${fmtAgo(x.last_active)}</td><td>${x.flags.length ? flagChips(x.flags, false) : ""}</td>`;
+    tr.querySelector("a").onclick = () => openStudent(currentClassId, x.student_id, "students");
+    body.appendChild(tr);
+  });
+  document.querySelectorAll("#students-table th").forEach(th => {
+    const base = th.textContent.replace(/ [▲▼]$/, "");
+    th.textContent = base + (th.dataset.sort === k ? (dir > 0 ? " ▲" : " ▼") : "");
+  });
+}
+document.querySelectorAll("#students-table th").forEach(th => {
+  th.style.cursor = "pointer";
+  th.onclick = () => {
+    const k = th.dataset.sort;
+    studentSort = studentSort.key === k ? { key: k, dir: -studentSort.dir } : { key: k, dir: k === "username" ? 1 : -1 };
+    renderStudentsTable();
+  };
+});
+
+function renderLearning(ins, an) {
+  const tb = document.querySelector("#topics-table tbody");
+  tb.innerHTML = "";
+  if (ins.topics.length === 0) tb.innerHTML = "<tr><td colspan='6'><em>No answers recorded yet.</em></td></tr>";
+  ins.topics.forEach(t => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(t.topic)}</td><td>${t.attempts}</td><td>${accBar(t.accuracy)}</td><td>${t.students}</td><td>${t.struggling_students}</td>
+      <td>${t.flag ? `<span class="chip ${t.flag === "reteach" ? "high" : "watch"}" title="${escapeHtml(t.note)}">${t.flag === "reteach" ? "Revisit" : "Watch"}</span>` : ""}</td>`;
+    tb.appendChild(tr);
+  });
+  renderWeekly(document.getElementById("weekly-bars"), ins.weekly);
+
+  const qb = document.querySelector("#analytics-questions-table tbody");
+  qb.innerHTML = "";
+  if (an.questions.length === 0) qb.innerHTML = "<tr><td colspan='4'><em>No questions assigned.</em></td></tr>";
+  an.questions.slice().sort((a, b) => {
+    const ra = a.attempts ? a.correct_count / a.attempts : 2, rb = b.attempts ? b.correct_count / b.attempts : 2;
+    return ra - rb || b.attempts - a.attempts;
+  }).forEach(q => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(q.prompt)}</td><td>${escapeHtml(q.topic || "")}</td><td>${q.attempts}</td>
+      <td class="${accuracyClass(q.correct_count, q.attempts)}">${pct(q.correct_count, q.attempts)}</td>`;
+    qb.appendChild(tr);
+  });
+}
+
+// ---- Basic Training progress (Milestone 297) - the Onboarding tab ----
 async function loadTraining(classId) {
   const el = document.getElementById('class-training');
   el.innerHTML = '';
@@ -657,63 +907,11 @@ async function loadTraining(classId) {
   };
 }
 
-// ---- class analytics ----
-document.getElementById("btn-view-analytics").onclick = () => openClassAnalytics(currentClassId);
-document.getElementById("analytics-back").onclick = () => openClass(currentClassId);
+// ---- student detail (tabs: Summary / Questions / Activity / Actions) ----
+document.getElementById("student-back").onclick = () => openClass(currentClassId, studentReturnTab);
 
-function pct(correct, attempts) {
-  if (attempts === 0) return "—";
-  return Math.round((correct / attempts) * 100) + "%";
-}
-
-function accuracyClass(correct, attempts) {
-  if (attempts === 0) return "";
-  const r = correct / attempts;
-  return r >= 0.7 ? "accuracy-good" : (r < 0.4 ? "accuracy-bad" : "");
-}
-
-async function openClassAnalytics(id) {
-  const data = await api("GET", `/api/teacher/classes/${id}/analytics`);
-  document.getElementById("analytics-class-name").textContent = data.class.name + " — Analytics";
-
-  const studentsBody = document.querySelector("#analytics-students-table tbody");
-  studentsBody.innerHTML = "";
-  if (data.students.length === 0) {
-    studentsBody.innerHTML = "<tr><td colspan='4'><em>No students yet.</em></td></tr>";
-  }
-  data.students.forEach(s => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td><a class="link">${escapeHtml(s.username)}</a></td><td>${s.attempts}</td><td>${s.correct_count}</td>
-      <td class="${accuracyClass(s.correct_count, s.attempts)}">${pct(s.correct_count, s.attempts)}</td>`;
-    tr.querySelector("a").onclick = () => openStudent(id, s.student_id, "view-analytics");
-    studentsBody.appendChild(tr);
-  });
-
-  const questionsBody = document.querySelector("#analytics-questions-table tbody");
-  questionsBody.innerHTML = "";
-  if (data.questions.length === 0) {
-    questionsBody.innerHTML = "<tr><td colspan='4'><em>No questions assigned.</em></td></tr>";
-  }
-  data.questions.forEach(q => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escapeHtml(q.prompt)}</td><td>${escapeHtml(q.topic || "")}</td><td>${q.attempts}</td>
-      <td class="${accuracyClass(q.correct_count, q.attempts)}">${pct(q.correct_count, q.attempts)}</td>`;
-    questionsBody.appendChild(tr);
-  });
-
-  show("view-analytics");
-}
-
-// ---- student detail (drill-down from either the roster or the analytics table) ----
-let studentReturnView = "view-class";
-
-document.getElementById("student-back").onclick = () => {
-  if (studentReturnView === "view-analytics") openClassAnalytics(currentClassId);
-  else openClass(currentClassId);
-};
-
-async function openStudent(classId, studentId, returnView) {
-  studentReturnView = returnView;
+async function openStudent(classId, studentId, returnTab) {
+  studentReturnTab = returnTab || "students";
   currentStudentId = studentId;
   document.getElementById("reset-pw-input").value = "";
   setError("reset-pw-error", "");
@@ -721,8 +919,26 @@ async function openStudent(classId, studentId, returnView) {
   const data = await api("GET", `/api/teacher/classes/${classId}/students/${studentId}`);
 
   document.getElementById("student-detail-name").textContent = data.student.username;
+
+  // Summary
+  const ins = data.insights;
+  const fl = document.getElementById("student-flags");
+  fl.innerHTML = ins.flags.length === 0 ? "<p class='hint'>Nothing flagged for this student right now.</p>"
+    : "<div style='margin-bottom:10px'>" + flagChips(ins.flags, true) + "</div>";
   document.getElementById("student-overall").textContent =
-    `${data.overall.correct_count} / ${data.overall.attempts} correct overall (${pct(data.overall.correct_count, data.overall.attempts)})`;
+    `${data.overall.correct_count} / ${data.overall.attempts} correct overall (${pct(data.overall.correct_count, data.overall.attempts)})` +
+    (ins.class_accuracy !== null ? ` - the class averages ${fmtPct(ins.class_accuracy)}` : "");
+  renderWeekly(document.getElementById("student-weekly"), ins.weekly);
+  const tb = document.querySelector("#student-topics-table tbody");
+  tb.innerHTML = "";
+  if (ins.topics.length === 0) tb.innerHTML = "<tr><td colspan='3'><em>No answers recorded yet.</em></td></tr>";
+  ins.topics.forEach(t => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(t.topic)}</td><td>${t.attempts}</td><td>${accBar(t.attempts > 0 ? t.correct / t.attempts : null)}</td>`;
+    tb.appendChild(tr);
+  });
+
+  // Activity
   const pl = data.play;
   if (pl) {
     const secs = ms => (ms / 1000).toFixed(1) + "s";
@@ -752,6 +968,7 @@ async function openStudent(classId, studentId, returnView) {
       : "Last 30 days: " + pl.areas.map(a => (names[a.area] || a.area) + " " + fmtDuration(a.seconds)).join(" · ");
   }
 
+  // Questions
   const el = document.getElementById("student-sets");
   el.innerHTML = "";
   if (data.question_sets.length === 0) {
@@ -782,6 +999,7 @@ async function openStudent(classId, studentId, returnView) {
     el.appendChild(wrap);
   });
 
+  selectTab("student-tabs", "stab-", "summary");
   show("view-student");
 }
 

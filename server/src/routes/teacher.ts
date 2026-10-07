@@ -8,6 +8,7 @@ import { parseCsv } from "../csv";
 import { isUsernameAllowed } from "../usernameFilter";
 import { sendPasswordResetEmail } from "../email";
 import { parseTutorial } from "../tutorial";
+import { classInsights, studentInsights } from "../insights";
 
 const router = Router();
 
@@ -244,6 +245,14 @@ router.get("/classes/:id/analytics", ah(async (req: AuthedRequest, res) => {
   res.json({ class: cls, students, questions });
 }));
 
+// Milestone 303: who needs help and which topics need attention (insights.ts) - the dashboard's Overview, Students and Learning tabs.
+router.get("/classes/:id/insights", ah(async (req: AuthedRequest, res) => {
+  const classId = Number(req.params.id);
+  const cls = await dbGet("SELECT id, name FROM classes WHERE id = ? AND teacher_id = ?", [classId, req.userId!]);
+  if (!cls) return res.status(404).json({ error: "Class not found" });
+  res.json({ class: cls, ...(await classInsights(classId)) });
+}));
+
 // One student's own breakdown, by question set and by individual question
 // within each set - the analytics endpoint above only ever aggregates
 // across the whole class, direct request for a per-student drill-down.
@@ -330,7 +339,12 @@ router.get("/classes/:id/students/:studentId", ah(async (req: AuthedRequest, res
     [studentId, classId]
   );
 
+  // Milestone 303: why this student is (or is not) flagged, and their topics and weekly accuracy
+  const ci = await classInsights(classId);
+  const mine = ci.students.find((x) => x.student_id === studentId);
+  const si = await studentInsights(classId, studentId);
   res.json({
+    insights: { flags: mine?.flags ?? [], topics: si.topics, weekly: si.weekly, accuracy_7d: mine?.accuracy_7d ?? null, class_accuracy: ci.summary.accuracy },
     student: { id: studentId, username: member.username },
     overall,
     play: { ...act, days, areas, avg_answer_ms: speed?.avg_ms ?? null, avg_right_ms: speed?.right_ms ?? null, avg_wrong_ms: speed?.wrong_ms ?? null, timed_answers: speed?.timed ?? 0 },
