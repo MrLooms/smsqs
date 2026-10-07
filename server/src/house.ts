@@ -1,7 +1,7 @@
 // Milestone 262: the player home. One house per account, changed ONLY through /api/house/* (never the
 // character PUT), so the server - not the client - decides what you own and what fits. Coordinates are
 // relative to the house's top-left corner; the client builds the room from them (scr_house.gml).
-import { HOUSE_ITEM_IDS } from "./houseCatalog";
+import { HOUSE_ITEM_IDS, HOUSE_VARIANT_OF, HOUSE_VARIANT_COUNT } from "./houseCatalog";
 
 export const FLOORS = ["stone_brown", "brick_red", "stone_grey", "checker_tan"];
 // wall paint (the client tints the brick wall face): see interior_wall_color in scr_interiors.gml
@@ -19,6 +19,7 @@ export interface Placed {
   x: number;
   y: number;
   flip: number;
+  v: number; // which variant of the item (Milestone 281: a group of look-alikes is one item the player cycles through)
 }
 
 export interface HouseState {
@@ -67,6 +68,20 @@ export function parseHouse(json: string | null | undefined, isTest: boolean): { 
     /* fall back to the default */
   }
   let changed = false;
+  // Milestone 281: houses saved before furniture was grouped hold ids of individual variants - fold them into their group
+  // (owned counts add up, capped; a placed piece becomes the group's id plus its variant index).
+  for (const id of Object.keys(s.owned)) {
+    const g = HOUSE_VARIANT_OF[id];
+    if (!g) continue;
+    s.owned[g[0]] = Math.min(MAX_OWNED_PER_ITEM, (s.owned[g[0]] ?? 0) + (Number(s.owned[id]) || 0));
+    delete s.owned[id];
+    changed = true;
+  }
+  s.placed = s.placed.map((pl) => {
+    const g = pl && typeof pl.item === "string" ? HOUSE_VARIANT_OF[pl.item] : undefined;
+    if (g) { changed = true; return { ...pl, item: g[0], v: g[1] }; }
+    return pl;
+  });
   if (s.v < 2) {
     // an earlier build granted a starter pack; nothing has been purchasable until now, so wipe it
     s.owned = {};
@@ -108,7 +123,9 @@ export function cleanPlaced(s: HouseState, raw: unknown): Placed[] | string {
       if (pieces > t.max) return "Too many pieces for this house";
       if (used[r.item] > (s.owned[r.item] ?? 0)) return "You don't own that many";
     }
-    out.push({ item: r.item, x, y, flip: r.flip ? 1 : 0 });
+    const count = HOUSE_VARIANT_COUNT[r.item] ?? 1;
+    const v = Number.isInteger(r.v) && r.v >= 0 && r.v < count ? r.v : 0;
+    out.push({ item: r.item, x, y, flip: r.flip ? 1 : 0, v });
   }
   return out;
 }
