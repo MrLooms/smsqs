@@ -5,7 +5,7 @@ import { isTestName } from "../testAccount";
 import { HouseState, parseHouse, cleanPlaced, cleanChest, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM, isFreeItem } from "../house";
 import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import { inSameParty } from "../party";
-import { parseTutorial, tutorialToClient, isTutId, isStepId } from "../tutorial";
+import { parseTutorial, tutorialToClient, isTutId, isStepId, CHECKLIST_ITEMS } from "../tutorial";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
   DEFAULT_NAMES, incubateMs, BOOST_MS, MAX_COLLECTION, LorekinEntry, newEntry, addXp, xpNext, rarityOf,
@@ -497,6 +497,34 @@ router.post("/tutorial/step", requireAuth, requireRole("student"), ah(async (req
   res.json({ ok: true });
 }));
 
+// Milestone 299: tick one item of a checklist tutorial ("checklist" -> class, quest, home...). Idempotent.
+router.post("/tutorial/tick", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const tut = req.body?.tut;
+  const item = req.body?.item;
+  if (tut !== "checklist" || !CHECKLIST_ITEMS.includes(item)) return res.json({ ok: false, error: "Bad item" });
+  const out = await withTransaction(async (query) => {
+    const r = await query("SELECT tutorial_json FROM characters WHERE user_id = ? FOR UPDATE", [req.userId!]);
+    const st = parseTutorial(r.rows[0]?.tutorial_json);
+    const list = st.ticks[tut] ?? [];
+    if (!list.includes(item)) {
+      list.push(item);
+      st.ticks[tut] = list;
+      await query("UPDATE characters SET tutorial_json = ? WHERE user_id = ?", [JSON.stringify(st), req.userId!]);
+      await query("INSERT INTO tutorial_events (user_id, tut, step, kind) VALUES (?, ?, ?, 'tick')", [req.userId!, tut, item]);
+    }
+    return tutorialToClient(st);
+  });
+  res.json({ ok: true, tutorial: out });
+}));
+
+// Test account only: wipe every tutorial record so the whole thing can be tried again.
+router.post("/tutorial/debug_reset", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const who = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [req.userId!]);
+  if (!who || !isTestName(who.username)) return res.json({ ok: false, error: "Test account only" });
+  await dbRun("UPDATE characters SET tutorial_json = '{}' WHERE user_id = ?", [req.userId!]);
+  res.json({ ok: true, tutorial: tutorialToClient(parseTutorial("{}")) });
+}));
+
 router.post("/tutorial/done", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
   const tut = req.body?.tut;
   const skipped = !!req.body?.skipped;
@@ -504,6 +532,10 @@ router.post("/tutorial/done", requireAuth, requireRole("student"), ah(async (req
   const out = await withTransaction(async (query) => {
     const r = await query("SELECT tutorial_json FROM characters WHERE user_id = ? FOR UPDATE", [req.userId!]);
     const st = parseTutorial(r.rows[0]?.tutorial_json);
+    // the checklist only finishes when every item is ticked
+    if (tut === "checklist" && !CHECKLIST_ITEMS.every((i) => (st.ticks["checklist"] ?? []).includes(i))) {
+      return { first: false, tutorial: tutorialToClient(st) };
+    }
     const first = !st.done[tut];
     if (first) {
       st.done[tut] = Date.now();
