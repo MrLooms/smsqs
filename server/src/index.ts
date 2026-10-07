@@ -11,6 +11,7 @@ import { CharacterState, DEFAULT_CHARACTER, DEFAULT_APPEARANCE, Item } from "./t
 import { isUsernameAllowed } from "./usernameFilter";
 import { parseState as parseLorekin, toClient as lorekinToClient, fillAllSpecies } from "./lorekin";
 import { parseHouse, houseToClient } from "./house";
+import { parseTutorial, tutorialToClient } from "./tutorial";
 import teacherRouter from "./routes/teacher";
 import studentRouter from "./routes/student";
 import { attachMultiplayer } from "./ws";
@@ -73,6 +74,7 @@ async function loadCharacter(userId: number): Promise<CharacterState> {
     appearance: row.appearance_json ? JSON.parse(row.appearance_json) : DEFAULT_APPEARANCE,
     lorekin: lorekinToClient(lk),
     house: houseToClient(hs.state),
+    tutorial: tutorialToClient(parseTutorial(row.tutorial_json)),
   };
 }
 

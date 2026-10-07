@@ -258,6 +258,11 @@
   <h3>Roster</h3>
   <div id="class-roster"><em>No students yet.</em></div>
 
+  <h3>Basic Training</h3>
+  <p style="color:var(--muted); font-size:13px">New students play a short guided training on their first login. Reset sends a student (or everyone) back through it.</p>
+  <div id="class-training"></div>
+  <div class="row" style="margin-top:10px"><button class="secondary" id="btn-training-reset-all">Reset training for the whole class</button></div>
+
   <h3>Assigned question sets</h3>
   <div id="class-assigned"></div>
   <div class="row" style="margin-top:10px">
@@ -576,6 +581,8 @@ async function openClass(id) {
     rosterEl.appendChild(row);
   });
 
+  loadTraining(id);
+
   const assignedEl = document.getElementById("class-assigned");
   assignedEl.innerHTML = "";
   if (data.assigned_sets.length === 0) assignedEl.innerHTML = "<em>No question sets assigned.</em>";
@@ -611,6 +618,43 @@ async function openClass(id) {
   };
 
   show("view-class");
+}
+
+// ---- Basic Training progress (Milestone 297) ----
+const TRAINING_STEP_NAMES = {};
+async function loadTraining(classId) {
+  const el = document.getElementById('class-training');
+  el.innerHTML = '';
+  let data;
+  try { data = await api('GET', '/api/teacher/classes/' + classId + '/tutorial'); } catch (e) { el.innerHTML = '<em>' + escapeHtml(e.message) + '</em>'; return; }
+  if (data.students.length === 0) { el.innerHTML = '<em>No students yet.</em>'; return; }
+  const label = { done: 'Finished', skipped: 'Skipped', existing: 'Was already playing', in_progress: 'In progress', not_started: 'Not started' };
+  data.students.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'list-item';
+    row.innerHTML = '<div>' + escapeHtml(s.username) + '<div class="meta">' + label[s.status] + (s.status === 'in_progress' && s.step ? ' - on step: ' + escapeHtml(s.step) : '') + '</div></div>';
+    const btn = document.createElement('button');
+    btn.className = 'secondary';
+    btn.textContent = 'Reset';
+    btn.onclick = async () => {
+      await api('POST', '/api/teacher/classes/' + classId + '/tutorial/reset', { student_id: s.student_id });
+      loadTraining(classId);
+    };
+    row.appendChild(btn);
+    el.appendChild(row);
+  });
+  if (data.steps.length > 0) {
+    const sum = document.createElement('div');
+    sum.className = 'meta';
+    sum.style.marginTop = '8px';
+    sum.textContent = 'Students who reached each step: ' + data.steps.map(x => x.step + ' ' + x.students).join(' / ');
+    el.appendChild(sum);
+  }
+  document.getElementById('btn-training-reset-all').onclick = async () => {
+    if (!confirm('Send every student in this class back through Basic Training?')) return;
+    await api('POST', '/api/teacher/classes/' + classId + '/tutorial/reset', {});
+    loadTraining(classId);
+  };
 }
 
 // ---- class analytics ----

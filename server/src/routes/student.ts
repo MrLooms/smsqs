@@ -5,6 +5,7 @@ import { isTestName } from "../testAccount";
 import { HouseState, parseHouse, cleanPlaced, cleanChest, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM, isFreeItem } from "../house";
 import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import { inSameParty } from "../party";
+import { parseTutorial, tutorialToClient, isTutId, isStepId } from "../tutorial";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
   DEFAULT_NAMES, incubateMs, BOOST_MS, MAX_COLLECTION, LorekinEntry, newEntry, addXp, xpNext, rarityOf,
@@ -477,6 +478,48 @@ router.post("/lorekin/debug_ready", requireAuth, requireRole("student"), ah(asyn
   });
   if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
   res.json({ ok: true, lorekin: out.state });
+}));
+
+// Milestone 297: tutorial progress (tutorial.ts). The game reports each step the player reaches and when a tutorial ends; "done" answers
+// first:true exactly once per tutorial (the game hands out the finish reward only then, so a replay never pays twice).
+router.post("/tutorial/step", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const tut = req.body?.tut;
+  const step = req.body?.step;
+  if (!isTutId(tut) || !isStepId(step)) return res.json({ ok: false, error: "Bad step" });
+  await withTransaction(async (query) => {
+    const r = await query("SELECT tutorial_json FROM characters WHERE user_id = ? FOR UPDATE", [req.userId!]);
+    const st = parseTutorial(r.rows[0]?.tutorial_json);
+    if (st.step[tut] === step) return; // already there (a resume, or a repeat report)
+    st.step[tut] = step;
+    await query("UPDATE characters SET tutorial_json = ? WHERE user_id = ?", [JSON.stringify(st), req.userId!]);
+    await query("INSERT INTO tutorial_events (user_id, tut, step, kind) VALUES (?, ?, ?, 'step')", [req.userId!, tut, step]);
+  });
+  res.json({ ok: true });
+}));
+
+router.post("/tutorial/done", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const tut = req.body?.tut;
+  const skipped = !!req.body?.skipped;
+  if (!isTutId(tut)) return res.json({ ok: false, error: "Bad tutorial" });
+  const out = await withTransaction(async (query) => {
+    const r = await query("SELECT tutorial_json FROM characters WHERE user_id = ? FOR UPDATE", [req.userId!]);
+    const st = parseTutorial(r.rows[0]?.tutorial_json);
+    const first = !st.done[tut];
+    if (first) {
+      st.done[tut] = Date.now();
+      if (skipped) st.skipped[tut] = true;
+      delete st.step[tut];
+      await query("UPDATE characters SET tutorial_json = ? WHERE user_id = ?", [JSON.stringify(st), req.userId!]);
+      await query("INSERT INTO tutorial_events (user_id, tut, step, kind) VALUES (?, ?, ?, ?)", [req.userId!, tut, "end", skipped ? "skip" : "done"]);
+    }
+    return { first, tutorial: tutorialToClient(st) };
+  });
+  res.json({ ok: true, first: out.first, skipped: skipped, tutorial: out.tutorial });
+}));
+
+router.get("/tutorial", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const r = await dbGet<{ tutorial_json: string | null }>("SELECT tutorial_json FROM characters WHERE user_id = ?", [req.userId!]);
+  res.json({ tutorial: tutorialToClient(parseTutorial(r?.tutorial_json)) });
 }));
 
 // Milestone 262: the player home. Same locked read-modify-write as the Lorekin routes; logic errors come

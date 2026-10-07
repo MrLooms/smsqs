@@ -7,6 +7,7 @@ import { ah } from "../asyncHandler";
 import { parseCsv } from "../csv";
 import { isUsernameAllowed } from "../usernameFilter";
 import { sendPasswordResetEmail } from "../email";
+import { parseTutorial } from "../tutorial";
 
 const router = Router();
 
@@ -335,6 +336,67 @@ router.get("/classes/:id/students/:studentId", ah(async (req: AuthedRequest, res
     play: { ...act, days, areas, avg_answer_ms: speed?.avg_ms ?? null, avg_right_ms: speed?.right_ms ?? null, avg_wrong_ms: speed?.wrong_ms ?? null, timed_answers: speed?.timed ?? 0 },
     question_sets: Array.from(setsById.values()),
   });
+}));
+
+// Milestone 297: Basic Training progress for a class - per student (done / skipped / still on step X / not started) and, for the
+// whole class, how many students reached each step (where it stalls). Works from tutorial_json + tutorial_events (see tutorial.ts).
+router.get("/classes/:id/tutorial", ah(async (req: AuthedRequest, res) => {
+  const classId = Number(req.params.id);
+  const cls = await dbGet("SELECT id FROM classes WHERE id = ? AND teacher_id = ?", [classId, req.userId!]);
+  if (!cls) return res.status(404).json({ error: "Class not found" });
+  const rows = await dbAll<{ student_id: number; username: string; tutorial_json: string | null }>(
+    `SELECT u.id AS student_id, u.username, c.tutorial_json
+     FROM class_members m JOIN users u ON u.id = m.student_id LEFT JOIN characters c ON c.user_id = u.id
+     WHERE m.class_id = ? ORDER BY u.username ASC`,
+    [classId]
+  );
+  const students = rows.map((r) => {
+    const st = parseTutorial(r.tutorial_json);
+    const doneAt = st.done["basic"];
+    return {
+      student_id: r.student_id,
+      username: r.username,
+      status: doneAt ? (doneAt <= 1 ? "existing" : (st.skipped["basic"] ? "skipped" : "done")) : (st.step["basic"] ? "in_progress" : "not_started"),
+      step: st.step["basic"] ?? null,
+    };
+  });
+  const steps = await dbAll<{ step: string; students: number }>(
+    `SELECT e.step, COUNT(DISTINCT e.user_id)::int AS students
+     FROM tutorial_events e JOIN class_members m ON m.student_id = e.user_id
+     WHERE m.class_id = ? AND e.tut = 'basic' AND e.kind = 'step' GROUP BY e.step`,
+    [classId]
+  );
+  res.json({ students, steps });
+}));
+
+// Milestone 297: send a student (body { student_id }) - or the whole class (no student_id) - back through Basic Training. Their other
+// tutorials are left alone. Only students in one of the teacher's own classes can be reset.
+router.post("/classes/:id/tutorial/reset", ah(async (req: AuthedRequest, res) => {
+  const classId = Number(req.params.id);
+  const cls = await dbGet("SELECT id FROM classes WHERE id = ? AND teacher_id = ?", [classId, req.userId!]);
+  if (!cls) return res.status(404).json({ error: "Class not found" });
+  const sid = req.body?.student_id;
+  const ids = (await dbAll<{ student_id: number }>(
+    sid !== undefined && sid !== null
+      ? "SELECT student_id FROM class_members WHERE class_id = ? AND student_id = ?"
+      : "SELECT student_id FROM class_members WHERE class_id = ?",
+    sid !== undefined && sid !== null ? [classId, Number(sid)] : [classId]
+  )).map((r) => r.student_id);
+  if (sid !== undefined && sid !== null && ids.length === 0) return res.status(404).json({ error: "Student not found in this class" });
+  let n = 0;
+  for (const id of ids) {
+    await withTransaction(async (query) => {
+      const r = await query("SELECT tutorial_json FROM characters WHERE user_id = ? FOR UPDATE", [id]);
+      if (r.rows.length === 0) return;
+      const st = parseTutorial(r.rows[0].tutorial_json);
+      delete st.done["basic"];
+      delete st.skipped["basic"];
+      delete st.step["basic"];
+      await query("UPDATE characters SET tutorial_json = ? WHERE user_id = ?", [JSON.stringify(st), id]);
+      n++;
+    });
+  }
+  res.json({ ok: true, reset: n });
 }));
 
 // Milestone 100: lets a teacher reset a student's password from the dashboard (a student

@@ -249,6 +249,25 @@ export async function initDb() {
   // Milestone 262: the player home - owned furniture, placed layout, floor style, tier (see house.ts). Changed only
   // through the /api/house/* routes, never the character PUT.
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS house_json TEXT NOT NULL DEFAULT '{}'");
+  // Milestone 297: tutorial progress (see tutorial.ts). Every character that exists WHEN THIS COLUMN IS FIRST ADDED already knows the
+  // game, so they are marked as having finished Basic Training; accounts made afterwards start with NULL and get the training. The
+  // check on information_schema keeps this from running again (and grandfathering brand-new accounts) on every later boot.
+  const tcol = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name = 'characters' AND column_name = 'tutorial_json'");
+  if (tcol.rows.length === 0) {
+    await pool.query("ALTER TABLE characters ADD COLUMN tutorial_json TEXT");
+    await pool.query(`UPDATE characters SET tutorial_json = '{"done":{"basic":1},"skipped":{},"step":{}}'`); // done time 1 = "already playing before tutorials existed"
+  }
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tutorial_events (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      tut TEXT NOT NULL,
+      step TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS tutorial_events_tut ON tutorial_events(tut, kind, step);
+  `);
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_x INTEGER");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_y INTEGER");
   // Milestone 185: LPC character customization (phase 2) - which variant of each layer
