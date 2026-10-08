@@ -29,10 +29,22 @@ export interface HouseState {
   owned: Record<string, number>;
   placed: Placed[];
   chest: { x: number; y: number }; // where the storage chest stands (movable, never deletable)
-  v: number; // layout version; < 2 means the short-lived starter pack was granted - cleared on first read
+  v: number; // layout version; < 2 = the short-lived starter pack was granted (cleared on first read); < 3 = partitions in the old shape (migrated)
 }
 
 const ITEM_SET = new Set(HOUSE_ITEM_IDS);
+
+// Milestone 313: partitions used to be one catalog group per PAINT with the SHAPE as the variant (v 0-3 = across 1-4, 4-7 = up 1-4); they are
+// now one group per SHAPE with the PAINT as the variant. A house saved the old way (v < 3) has its walls converted when it is first read.
+const OLD_PAINTS = ["brick", "slate", "sand", "moss", "plum", "stone"];
+function migratePartition(pl: any): any {
+  const m = pl && typeof pl.item === "string" ? /^wall_([a-z]+)_h1$/.exec(pl.item) : null;
+  if (!m) return pl;
+  const paint = OLD_PAINTS.indexOf(m[1]);
+  if (paint < 0) return pl;
+  const oldV = Number.isInteger(pl.v) && pl.v >= 0 && pl.v < 8 ? pl.v : 0;
+  return { ...pl, item: "wall_brick_" + (oldV < 4 ? "h" : "v") + ((oldV % 4) + 1), v: paint };
+}
 
 // A new home owns NOTHING - every piece is bought from the Carpenter (or won). The "test" account is the
 // exception: it owns plenty of every piece, including ones added to the catalog later.
@@ -46,7 +58,7 @@ export const MAX_PARTITIONS = 150;
 export const isFreeItem = (id: string) => id.startsWith("wall_");
 
 export function defaultHouse(): HouseState {
-  return { tier: 0, floor: "stone_brown", wall: "brick", owned: {}, placed: [], chest: { ...DEFAULT_CHEST }, v: 2 };
+  return { tier: 0, floor: "stone_brown", wall: "brick", owned: {}, placed: [], chest: { ...DEFAULT_CHEST }, v: 3 };
 }
 
 // Returns the parsed state and whether parsing had to ADD something (the starter pack, the test
@@ -68,6 +80,11 @@ export function parseHouse(json: string | null | undefined, isTest: boolean): { 
     /* fall back to the default */
   }
   let changed = false;
+  if (s.v < 3) {
+    // Milestone 313: old-format partitions become the new shape groups - BEFORE the variant fold below, which would read their ids differently
+    s.placed = s.placed.map(migratePartition);
+    changed = true;
+  }
   // Milestone 281: houses saved before furniture was grouped hold ids of individual variants - fold them into their group
   // (owned counts add up, capped; a placed piece becomes the group's id plus its variant index).
   for (const id of Object.keys(s.owned)) {
@@ -86,7 +103,11 @@ export function parseHouse(json: string | null | undefined, isTest: boolean): { 
     // an earlier build granted a starter pack; nothing has been purchasable until now, so wipe it
     s.owned = {};
     s.placed = [];
-    s.v = 2;
+    s.v = 3;
+    changed = true;
+  }
+  if (s.v < 3) {
+    s.v = 3;
     changed = true;
   }
   if (isTest) {
