@@ -241,3 +241,73 @@ export async function studentInsights(classId: number, studentId: number) {
   );
   return { topics, weekly };
 }
+
+// Milestone 304: the Activity tab - who played on which days (last 14), how long and how often, and where the class spends its time.
+export async function classActivity(classId: number) {
+  const days = (await dbAll<{ day: string }>(
+    "SELECT to_char(CURRENT_DATE - g, 'YYYY-MM-DD') AS day FROM generate_series(0, 13) g ORDER BY g DESC"
+  )).map((r) => r.day);
+  const roster = await dbAll<{ student_id: number; username: string }>(
+    "SELECT u.id AS student_id, u.username FROM class_members m JOIN users u ON u.id = m.student_id WHERE m.class_id = ? ORDER BY u.username ASC",
+    [classId]
+  );
+  const perDay = await dbAll<{ student_id: number; day: string; seconds: number }>(
+    `SELECT pa.user_id AS student_id, to_char(pa.day, 'YYYY-MM-DD') AS day, SUM(pa.seconds)::int AS seconds
+     FROM play_activity pa
+     WHERE pa.user_id IN (SELECT student_id FROM class_members WHERE class_id = ?) AND pa.day >= CURRENT_DATE - 13
+     GROUP BY 1, 2`,
+    [classId]
+  );
+  const sessions = await dbAll<{ student_id: number; sessions: number; active_seconds: number }>(
+    `SELECT p.user_id AS student_id, COUNT(*)::int AS sessions, COALESCE(SUM(p.active_seconds), 0)::int AS active_seconds
+     FROM play_sessions p
+     WHERE p.user_id IN (SELECT student_id FROM class_members WHERE class_id = ?) AND p.started_at >= now() - interval '14 days'
+     GROUP BY 1`,
+    [classId]
+  );
+  const areas = await dbAll<{ area: string; seconds: number }>(
+    `SELECT pa.area, SUM(pa.seconds)::int AS seconds
+     FROM play_activity pa
+     WHERE pa.user_id IN (SELECT student_id FROM class_members WHERE class_id = ?) AND pa.day >= CURRENT_DATE - 13
+     GROUP BY 1 ORDER BY 2 DESC`,
+    [classId]
+  );
+  const answers = await dbAll<{ day: string; answers: number }>(
+    `SELECT to_char(qa.attempted_at::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS answers
+     FROM question_attempts qa
+     WHERE qa.class_id = ? AND qa.attempted_at >= CURRENT_DATE - 13
+     GROUP BY 1`,
+    [classId]
+  );
+
+  const byStudent = new Map<number, Record<string, number>>();
+  for (const r of perDay) {
+    const m = byStudent.get(r.student_id) ?? {};
+    m[r.day] = r.seconds;
+    byStudent.set(r.student_id, m);
+  }
+  const sessBy = new Map(sessions.map((s) => [s.student_id, s]));
+  const students = roster.map((r) => {
+    const by_day = byStudent.get(r.student_id) ?? {};
+    const secs = Object.values(by_day).reduce((a, b) => a + b, 0);
+    const s = sessBy.get(r.student_id);
+    return {
+      student_id: r.student_id, username: r.username, by_day,
+      secs_14d: secs,
+      active_days_14d: Object.values(by_day).filter((v) => v > 0).length,
+      sessions_14d: s?.sessions ?? 0,
+      avg_session_secs: s && s.sessions > 0 ? Math.round(s.active_seconds / s.sessions) : null,
+    };
+  });
+  const answersBy = new Map(answers.map((a) => [a.day, a.answers]));
+  const class_days = days.map((day) => {
+    let seconds = 0, active = 0;
+    for (const st of students) {
+      const v = st.by_day[day] ?? 0;
+      seconds += v;
+      if (v > 0) active += 1;
+    }
+    return { day, seconds, active_students: active, answers: answersBy.get(day) ?? 0 };
+  });
+  return { days, students, class_days, areas };
+}

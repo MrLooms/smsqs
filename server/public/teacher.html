@@ -124,6 +124,9 @@
   .wk-val { font-size: 11px; color: var(--muted); height: 14px; }
   .wk-lbl { font-size: 11px; color: var(--muted); margin-top: 3px; }
   main { max-width: 1000px; }
+  #activity-grid th.dcol { padding: 8px 2px; text-align: center; font-size: 11px; font-weight: 400; }
+  #activity-grid td.dcell { padding: 6px 2px; text-align: center; }
+  #activity-grid .sq { display: inline-block; width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -281,8 +284,9 @@
       <button data-tab="overview" class="active">Overview</button>
       <button data-tab="students">Students</button>
       <button data-tab="learning">Learning</button>
+      <button data-tab="activity">Activity</button>
+      <button data-tab="assign">Assign</button>
       <button data-tab="onboarding">Onboarding</button>
-      <button data-tab="settings">Settings</button>
     </div>
   </div>
 
@@ -325,14 +329,22 @@
     </table>
   </div>
 
-  <div class="card tabpane hidden" id="tab-onboarding">
-    <h3 style="margin-top:0">Basic Training</h3>
-    <p class="hint">New students play a short guided training on their first login. Reset sends a student (or everyone) back through it.</p>
-    <div id="class-training"></div>
-    <div class="row" style="margin-top:10px"><button class="secondary" id="btn-training-reset-all">Reset training for the whole class</button></div>
+  <div class="card tabpane hidden" id="tab-activity">
+    <div class="tiles" id="activity-tiles"></div>
+    <h3>Who played when</h3>
+    <p class="hint">Last 14 days. Darker = more play that day; hover a square for the time. Least active students are listed first.</p>
+    <div style="overflow-x:auto"><table class="stats" id="activity-grid">
+      <thead></thead>
+      <tbody></tbody>
+    </table></div>
+    <h3>Class by day</h3>
+    <p class="hint">Bars are total play time; hover for how many students played and how many questions were answered.</p>
+    <div id="activity-days" class="weekly"></div>
+    <h3>Where the time goes</h3>
+    <p id="activity-areas" class="hint"></p>
   </div>
 
-  <div class="card tabpane hidden" id="tab-settings">
+  <div class="card tabpane hidden" id="tab-assign">
     <h3 style="margin-top:0">Assigned question sets</h3>
     <div id="class-assigned"></div>
     <div class="row" style="margin-top:10px">
@@ -340,6 +352,13 @@
       <button id="btn-assign-set">Assign</button>
     </div>
   </div>
+  <div class="card tabpane hidden" id="tab-onboarding">
+    <h3 style="margin-top:0">Basic Training</h3>
+    <p class="hint">New students play a short guided training on their first login. Reset sends a student (or everyone) back through it.</p>
+    <div id="class-training"></div>
+    <div class="row" style="margin-top:10px"><button class="secondary" id="btn-training-reset-all">Reset training for the whole class</button></div>
+  </div>
+
 </section>
 
 <!-- STUDENT DETAIL VIEW (tabs) -->
@@ -718,10 +737,11 @@ function renderWeekly(el, weeks) {
 async function openClass(id, tab) {
   currentClassId = id;
   if (tab) currentClassTab = tab;
-  const [data, ins, an] = await Promise.all([
+  const [data, ins, an, act] = await Promise.all([
     api("GET", "/api/teacher/classes/" + id),
     api("GET", `/api/teacher/classes/${id}/insights`),
     api("GET", `/api/teacher/classes/${id}/analytics`),
+    api("GET", `/api/teacher/classes/${id}/activity`),
   ]);
   insightsCache = ins;
   document.getElementById("class-detail-name").textContent = data.class.name;
@@ -730,6 +750,7 @@ async function openClass(id, tab) {
   renderOverview(ins);
   renderStudentsTable();
   renderLearning(ins, an);
+  renderActivity(act);
   loadTraining(id);
 
   const assignedEl = document.getElementById("class-assigned");
@@ -869,6 +890,63 @@ function renderLearning(ins, an) {
       <td class="${accuracyClass(q.correct_count, q.attempts)}">${pct(q.correct_count, q.attempts)}</td>`;
     qb.appendChild(tr);
   });
+}
+
+// ---- Activity tab (Milestone 304) ----
+function renderActivity(act) {
+  const names = { hub: "Town", interior: "Buildings and home", overworld: "Overworld", dungeon: "Dungeons", questions: "Answering questions", menu: "Menus", other: "Other" };
+  const n = act.students.length;
+  const total = act.students.reduce((a, s) => a + s.secs_14d, 0);
+  const activeAny = act.students.filter(s => s.active_days_14d > 0).length;
+  const sessions = act.students.reduce((a, s) => a + s.sessions_14d, 0);
+  const tiles = [
+    [activeAny + " / " + n, "played in 14 days"],
+    [fmtDuration(total), "total play (14 days)"],
+    [n > 0 ? fmtDuration(total / n) : "0m", "average per student"],
+    [sessions, "sessions"],
+  ];
+  document.getElementById("activity-tiles").innerHTML = tiles.map(t => `<div class="tile"><div class="num">${t[0]}</div><div class="lbl">${t[1]}</div></div>`).join("");
+
+  // the grid: one row per student, one square per day
+  const head = document.querySelector("#activity-grid thead");
+  head.innerHTML = "<tr><th>Student</th>" + act.days.map(d => `<th class="dcol" title="${d}">${d.slice(8)}</th>`).join("") +
+    "<th>Played</th><th>Days</th><th>Sessions</th><th>Avg session</th></tr>";
+  const body = document.querySelector("#activity-grid tbody");
+  body.innerHTML = "";
+  if (n === 0) { body.innerHTML = "<tr><td colspan='" + (act.days.length + 5) + "'><em>No students yet.</em></td></tr>"; }
+  let peak = 1800; // a darkest square = 30 minutes, or the busiest day if that is more
+  act.students.forEach(s => Object.values(s.by_day).forEach(v => { if (v > peak) peak = v; }));
+  act.students.slice().sort((a, b) => a.secs_14d - b.secs_14d || a.username.localeCompare(b.username)).forEach(s => {
+    const tr = document.createElement("tr");
+    const cells = act.days.map(d => {
+      const v = s.by_day[d] || 0;
+      const a = v > 0 ? (0.18 + 0.82 * Math.min(1, v / peak)).toFixed(2) : 0;
+      return `<td class="dcell"><span class="sq" style="background:${v > 0 ? "rgba(110,168,254," + a + ")" : "var(--panel-2)"}" title="${escapeHtml(s.username)} - ${d}: ${v > 0 ? fmtDuration(v) : "no play"}"></span></td>`;
+    }).join("");
+    tr.innerHTML = `<td><a class="link">${escapeHtml(s.username)}</a></td>${cells}<td>${fmtDuration(s.secs_14d)}</td><td>${s.active_days_14d}</td><td>${s.sessions_14d}</td><td>${s.avg_session_secs === null ? "—" : fmtDuration(s.avg_session_secs)}</td>`;
+    tr.querySelector("a").onclick = () => openStudent(currentClassId, s.student_id, "activity");
+    body.appendChild(tr);
+  });
+
+  // class by day
+  const el = document.getElementById("activity-days");
+  el.innerHTML = "";
+  const maxDay = Math.max(60, ...act.class_days.map(d => d.seconds));
+  if (act.class_days.every(d => d.seconds === 0 && d.answers === 0)) {
+    el.innerHTML = "<em class='hint'>No play recorded in the last 14 days.</em>";
+  } else {
+    act.class_days.forEach(d => {
+      const col = document.createElement("div");
+      col.className = "wk";
+      col.innerHTML = `<div class="wk-val">${d.seconds > 0 ? fmtDuration(d.seconds) : ""}</div>
+        <div class="wk-bar" style="height:${d.seconds > 0 ? Math.max(4, Math.round(70 * d.seconds / maxDay)) : 3}px; background:${d.seconds > 0 ? "var(--accent)" : "var(--border)"}"
+          title="${d.day}: ${d.active_students} student${d.active_students === 1 ? "" : "s"} played, ${d.answers} question${d.answers === 1 ? "" : "s"} answered"></div>
+        <div class="wk-lbl">${d.day.slice(5)}</div>`;
+      el.appendChild(col);
+    });
+  }
+  document.getElementById("activity-areas").textContent = act.areas.length === 0 ? "No play time recorded yet."
+    : "Last 14 days: " + act.areas.map(a => (names[a.area] || a.area) + " " + fmtDuration(a.seconds)).join(" · ");
 }
 
 // ---- Basic Training progress (Milestone 297) - the Onboarding tab ----
