@@ -1,11 +1,12 @@
 // Milestone 262: the player home. One house per account, changed ONLY through /api/house/* (never the
 // character PUT), so the server - not the client - decides what you own and what fits. Coordinates are
 // relative to the house's top-left corner; the client builds the room from them (scr_house.gml).
-import { HOUSE_ITEM_IDS, HOUSE_VARIANT_OF, HOUSE_VARIANT_COUNT } from "./houseCatalog";
+import { HOUSE_ITEM_IDS, HOUSE_VARIANT_OF, HOUSE_VARIANT_COUNT, HOUSE_EXTRA_FLOORS, HOUSE_EXTRA_WALLS } from "./houseCatalog";
 
-export const FLOORS = ["stone_brown", "brick_red", "stone_grey", "checker_tan"];
+// Milestone 313: after the originals come the floors / walls cut from the furniture packs (generated into houseCatalog.ts)
+export const FLOORS = ["stone_brown", "brick_red", "stone_grey", "checker_tan", ...HOUSE_EXTRA_FLOORS];
 // wall paint (the client tints the brick wall face): see interior_wall_color in scr_interiors.gml
-export const WALLS = ["brick", "slate", "sand", "moss", "plum"];
+export const WALLS = ["brick", "slate", "sand", "moss", "plum", ...HOUSE_EXTRA_WALLS];
 
 // Interior size (px) and how many pieces fit, by house tier. The client mirrors w/h (home_tier_info).
 export const TIERS = [
