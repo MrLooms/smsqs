@@ -7,7 +7,7 @@ import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import { inSameParty } from "../party";
 import { parseTutorial, tutorialToClient, isTutId, isStepId, CHECKLIST_ITEMS } from "../tutorial";
 import { EVENT_KINDS, cleanDetail } from "../events";
-import { parseDiscovery, discoveryToClient, countWisp } from "../discovery";
+import { parseDiscovery, discoveryToClient, countWisp, tradeWisps } from "../discovery";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
   DEFAULT_NAMES, incubateMs, BOOST_MS, MAX_COLLECTION, LorekinEntry, newEntry, addXp, xpNext, rarityOf,
@@ -498,7 +498,7 @@ router.post("/events", requireAuth, requireRole("student"), ah(async (req: Authe
   res.json({ ok: true, saved });
 }));
 
-// Milestone 311: a Memory Wisp was collected. The server keeps the lifetime count and says which reward the new total earned (once).
+// Milestone 311: a Memory Wisp was collected - it is carried until traded in. The server keeps the counts and paces them.
 router.post("/discovery/wisp", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
   const out = await withTransaction(async (query) => {
     const r = await query("SELECT discovery_json FROM characters WHERE user_id = ? FOR UPDATE", [req.userId!]);
@@ -506,6 +506,18 @@ router.post("/discovery/wisp", requireAuth, requireRole("student"), ah(async (re
     const c = countWisp(st, Date.now());
     if (c.ok) await query("UPDATE characters SET discovery_json = ? WHERE user_id = ?", [JSON.stringify(st), req.userId!]);
     return { ...c, discovery: discoveryToClient(st) };
+  });
+  res.json(out);
+}));
+
+// Milestone 312: the Wisp Keeper buys every carried wisp (a flat price each). The game adds the gold from this answer.
+router.post("/discovery/exchange", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const out = await withTransaction(async (query) => {
+    const r = await query("SELECT discovery_json FROM characters WHERE user_id = ? FOR UPDATE", [req.userId!]);
+    const st = parseDiscovery(r.rows[0]?.discovery_json);
+    const t = tradeWisps(st);
+    if (t.n > 0) await query("UPDATE characters SET discovery_json = ? WHERE user_id = ?", [JSON.stringify(st), req.userId!]);
+    return { ok: true, n: t.n, gold: t.gold, discovery: discoveryToClient(st) };
   });
   res.json(out);
 }));

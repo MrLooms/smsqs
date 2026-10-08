@@ -1,29 +1,21 @@
-// Milestone 311: overworld discovery progress. Right now: Memory Wisps, small glowing things hidden around the overworld. Each one
-// collected counts toward a lifetime total (it survives relogging and the world re-rolling), and certain totals pay a permanent reward
-// once. The game reports each wisp (POST /api/discovery/wisp); the server keeps the count, enforces a pace limit so the number cannot
-// be inflated by a hacked client, and says which reward (if any) the new total just earned.
+// Milestone 311 (reworked in 312): overworld discovery progress. Right now: Memory Wisps, small glowing things hidden around the
+// overworld. Each one collected is CARRIED (held) until the player trades them in to the Wisp Keeper NPC in town, who pays a flat
+// amount of gold for each. The server keeps the carried count and the lifetime total, enforces a pace limit so the number cannot be
+// inflated by a hacked client, and does the trade (so a wisp can only be paid for once).
 export interface DiscoveryState {
-  wisps: number;       // lifetime wisps found
-  claimed: number[];   // milestone totals already paid
+  held: number;        // wisps carried, not yet traded in
+  lifetime: number;    // wisps ever found
   day: string;         // UTC day the "today" counter is for
   today: number;       // wisps counted today
   last_at: number;     // ms timestamp of the last wisp (pace limit)
 }
 
-// totals that pay out, and what: the game grants the reward only when the server says it is newly earned
-export const WISP_MILESTONES: { at: number; reward: string }[] = [
-  { at: 5, reward: "crystal" },     // one Knowledge Crystal charge
-  { at: 10, reward: "egg_common" }, // a Common Egg
-  { at: 20, reward: "hp_flask" },   // +1 health potion charge (max)
-  { at: 35, reward: "mp_flask" },   // +1 mana potion charge (max)
-  { at: 50, reward: "egg_rare" },   // a Rare Egg
-];
-export const WISP_REPEAT_EVERY = 25;      // after the last listed one, every 25 more wisps pays a crystal charge
-export const WISP_DAILY_CAP = 40;
+export const WISP_GOLD = 100;            // paid per wisp
+export const WISP_DAILY_CAP = 30;        // wisps counted per UTC day
 export const WISP_MIN_GAP_MS = 2500;
 
 export function freshDiscovery(): DiscoveryState {
-  return { wisps: 0, claimed: [], day: "", today: 0, last_at: 0 };
+  return { held: 0, lifetime: 0, day: "", today: 0, last_at: 0 };
 }
 
 export function parseDiscovery(json: string | null | undefined): DiscoveryState {
@@ -31,8 +23,10 @@ export function parseDiscovery(json: string | null | undefined): DiscoveryState 
   if (!json) return st;
   try {
     const o = JSON.parse(json);
-    if (Number.isInteger(o.wisps) && o.wisps >= 0) st.wisps = o.wisps;
-    if (Array.isArray(o.claimed)) st.claimed = o.claimed.filter((n: unknown) => Number.isInteger(n));
+    // (an older save kept just "wisps": that was the lifetime total)
+    const life = Number.isInteger(o.lifetime) ? o.lifetime : (Number.isInteger(o.wisps) ? o.wisps : 0);
+    if (life >= 0) st.lifetime = life;
+    if (Number.isInteger(o.held) && o.held >= 0) st.held = o.held;
     if (typeof o.day === "string") st.day = o.day.slice(0, 10);
     if (Number.isInteger(o.today) && o.today >= 0) st.today = o.today;
     if (Number.isFinite(o.last_at)) st.last_at = o.last_at;
@@ -43,34 +37,25 @@ export function parseDiscovery(json: string | null | undefined): DiscoveryState 
 }
 
 export function discoveryToClient(st: DiscoveryState) {
-  return { wisps: st.wisps, next: nextMilestone(st) };
+  return { held: st.held, lifetime: st.lifetime, gold_each: WISP_GOLD };
 }
 
-// The next total that pays, and what it pays (for the map's progress line)
-export function nextMilestone(st: DiscoveryState): { at: number; reward: string } {
-  for (const m of WISP_MILESTONES) if (!st.claimed.includes(m.at)) return m;
-  const last = WISP_MILESTONES[WISP_MILESTONES.length - 1].at;
-  const k = Math.floor((st.wisps - last) / WISP_REPEAT_EVERY) + 1;
-  return { at: last + Math.max(1, k) * WISP_REPEAT_EVERY, reward: "crystal" };
-}
-
-// Counts one wisp. Returns { ok, reward } - ok false when the pace limit refuses it.
-export function countWisp(st: DiscoveryState, now: number): { ok: boolean; reward: string | null; error?: string } {
+// Counts one wisp as carried. ok false when the pace limit refuses it.
+export function countWisp(st: DiscoveryState, now: number): { ok: boolean; error?: string } {
   const day = new Date(now).toISOString().slice(0, 10);
   if (st.day !== day) { st.day = day; st.today = 0; }
-  if (st.today >= WISP_DAILY_CAP) return { ok: false, reward: null, error: "Daily limit reached" };
-  if (now - st.last_at < WISP_MIN_GAP_MS) return { ok: false, reward: null, error: "Too fast" };
+  if (st.today >= WISP_DAILY_CAP) return { ok: false, error: "Daily limit reached" };
+  if (now - st.last_at < WISP_MIN_GAP_MS) return { ok: false, error: "Too fast" };
   st.today += 1;
   st.last_at = now;
-  st.wisps += 1;
-  let reward: string | null = null;
-  for (const m of WISP_MILESTONES) {
-    if (st.wisps >= m.at && !st.claimed.includes(m.at)) { st.claimed.push(m.at); reward = m.reward; break; }
-  }
-  if (reward === null && st.wisps > WISP_MILESTONES[WISP_MILESTONES.length - 1].at) {
-    const last = WISP_MILESTONES[WISP_MILESTONES.length - 1].at;
-    const slot = last + Math.floor((st.wisps - last) / WISP_REPEAT_EVERY) * WISP_REPEAT_EVERY;
-    if (slot > last && (st.wisps - last) % WISP_REPEAT_EVERY === 0 && !st.claimed.includes(slot)) { st.claimed.push(slot); reward = "crystal"; }
-  }
-  return { ok: true, reward };
+  st.held += 1;
+  st.lifetime += 1;
+  return { ok: true };
+}
+
+// Trades every carried wisp for gold. Returns how many and how much.
+export function tradeWisps(st: DiscoveryState): { n: number; gold: number } {
+  const n = st.held;
+  st.held = 0;
+  return { n, gold: n * WISP_GOLD };
 }
