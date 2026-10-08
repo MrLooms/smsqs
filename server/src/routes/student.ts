@@ -10,7 +10,7 @@ import { EVENT_KINDS, cleanDetail } from "../events";
 import { parseDiscovery, discoveryToClient, countWisp, tradeWisps } from "../discovery";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
-  DEFAULT_NAMES, incubateMs, BOOST_MS, MAX_COLLECTION, LorekinEntry, newEntry, addXp, xpNext, rarityOf,
+  DEFAULT_NAMES, incubateMs, BOOST_MS, MAX_COLLECTION, LorekinEntry, newEntry, addXp, xpNext, rarityOf, SPECIES_BY_RARITY,
 } from "../lorekin";
 import { requireAuth, requireRole, AuthedRequest } from "../auth";
 import { ah } from "../asyncHandler";
@@ -379,7 +379,9 @@ router.post("/lorekin/incubate", requireAuth, requireRole("student"), ah(async (
   const out = await lorekinMutate(req.userId!, (st) => {
     if (st.incubator) return "Something is already incubating";
     if (st.list.length >= MAX_COLLECTION) return "Your Lorekin collection is full";
-    st.incubator = { rarity, ready_at: Date.now() + incubateMs(rarity) };
+    // Milestone 318: an egg of a named species - accepted only if that species really is of this egg's rarity
+    const species = typeof req.body?.species === "string" && SPECIES_BY_RARITY[rarity]?.includes(req.body.species) ? req.body.species : undefined;
+    st.incubator = { rarity, ready_at: Date.now() + incubateMs(rarity), ...(species ? { species } : {}) };
   });
   if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
   res.json({ ok: true, lorekin: out.state });
@@ -402,7 +404,8 @@ router.post("/lorekin/hatch", requireAuth, requireRole("student"), ah(async (req
     if (!st.incubator) return "Nothing is incubating";
     if (st.incubator.ready_at > Date.now()) return "Not ready yet";
     if (st.list.length >= MAX_COLLECTION) return "Your Lorekin collection is full";
-    const species = pickSpecies(st.incubator.rarity);
+    const named = st.incubator.species && SPECIES_BY_RARITY[st.incubator.rarity]?.includes(st.incubator.species) ? st.incubator.species : null;
+    const species = named ?? pickSpecies(st.incubator.rarity);
     hatched = newEntry(st.next_id, species);
     st.next_id += 1;
     st.list.push(hatched);

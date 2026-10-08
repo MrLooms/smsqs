@@ -98,7 +98,8 @@ export interface LorekinState {
   active: number | null;
   next_id: number;
   // ready_at is epoch ms on THIS server's clock; never sent to the client as-is (see toClient).
-  incubator: { rarity: number; ready_at: number } | null;
+  // Milestone 318: `species` is set when the egg was of a named species (a tower's trapped Lorekin) - it hatches into exactly that
+  incubator: { rarity: number; ready_at: number; species?: string } | null;
 }
 
 export const EMPTY_STATE: LorekinState = { list: [], active: null, next_id: 1, incubator: null };
