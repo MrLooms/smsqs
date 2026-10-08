@@ -299,6 +299,9 @@
     <h3>Topics to revisit</h3>
     <p class="hint">Topics where the class, or a good share of it, is getting answers wrong.</p>
     <div id="overview-topics"></div>
+    <h3>Game hotspots</h3>
+    <p class="hint">Places where several students keep dying - a sign something may be too hard or too crowded (last 14 days).</p>
+    <div id="overview-hotspots"></div>
   </div>
 
   <div class="card tabpane hidden" id="tab-students">
@@ -371,6 +374,9 @@
     <h3>Where sessions end</h3>
     <p class="hint">The last place a student was when they stopped playing (sessions over a minute long). Lots of endings in one place can mean students get stuck, frustrated or bored there.</p>
     <div id="ev-quits"></div>
+    <h3>Gold per day</h3>
+    <p class="hint">Blue = gold earned (shop sales included), orange = gold spent. Whole class.</p>
+    <div id="ev-gold" class="weekly"></div>
     <h3>By student</h3>
     <div style="overflow-x:auto"><table class="stats" id="ev-table">
       <thead><tr>
@@ -417,6 +423,7 @@
       <button data-tab="summary" class="active">Summary</button>
       <button data-tab="questions">Questions</button>
       <button data-tab="activity">Activity</button>
+      <button data-tab="game">Game</button>
       <button data-tab="actions">Actions</button>
     </div>
   </div>
@@ -442,6 +449,18 @@
     <p id="student-play" class="hint"></p>
     <div id="student-play-days" style="display:flex; align-items:flex-end; gap:3px; height:54px; margin-bottom:6px"></div>
     <p id="student-play-areas" class="hint"></p>
+  </div>
+
+  <div class="card tabpane hidden" id="stab-game">
+    <p class="hint" id="sg-note"></p>
+    <div class="tiles" id="sg-tiles"></div>
+    <h3>Where they die</h3>
+    <div id="sg-deaths"></div>
+    <h3>Gold per day</h3>
+    <p class="hint">Blue = earned (shop sales included), orange = spent.</p>
+    <div id="sg-gold" class="weekly"></div>
+    <h3>Latest things they did</h3>
+    <div id="sg-recent"></div>
   </div>
 
   <div class="card tabpane hidden" id="stab-actions">
@@ -964,6 +983,68 @@ function placeLabel(p) {
   return p;
 }
 
+// gold earned / spent per day for the last 14 days (days: [{ day, gold_in, gold_out }])
+function renderGoldBars(el, days) {
+  el.innerHTML = "";
+  const by = {};
+  days.forEach(d => { by[d.day] = d; });
+  let peak = 0;
+  const cols = [];
+  for (let i = 13; i >= 0; i--) {
+    const key = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    const d = by[key] || { gold_in: 0, gold_out: 0 };
+    peak = Math.max(peak, d.gold_in, d.gold_out);
+    cols.push({ key, d });
+  }
+  if (peak === 0) { el.innerHTML = "<em class='hint'>No gold recorded in the last 14 days.</em>"; return; }
+  cols.forEach(c => {
+    const col = document.createElement("div");
+    col.className = "wk";
+    const h = v => v > 0 ? Math.max(4, Math.round(70 * v / peak)) : 2;
+    col.innerHTML = "<div class='wk-val'></div><div style='display:flex; align-items:flex-end; justify-content:center; gap:2px; height:72px' title='" + c.key + ": +" + c.d.gold_in + " earned, -" + c.d.gold_out + " spent'>" +
+      "<div style='width:9px; height:" + h(c.d.gold_in) + "px; background:var(--accent); border-radius:2px 2px 0 0'></div>" +
+      "<div style='width:9px; height:" + h(c.d.gold_out) + "px; background:var(--accent-2); border-radius:2px 2px 0 0'></div></div><div class='wk-lbl'>" + c.key.slice(5) + "</div>";
+    el.appendChild(col);
+  });
+}
+
+const EVENT_TEXT = {
+  death: e => "Died in " + placeLabel(e.detail),
+  level: e => "Reached level " + e.detail,
+  dungeon_in: e => "Entered the " + e.detail + " dungeon",
+  dungeon_out: e => "Left the " + e.detail + " dungeon",
+  boss: e => "Beat the " + e.detail + " boss",
+  craft: e => "Crafted something (" + (e.detail || "item") + ")",
+  enchant: e => "Enchanted a weapon (" + (e.detail || "") + ")",
+  hatch: () => "Hatched a Lorekin",
+  shop_buy: e => "Bought from the shop (" + e.n + " gold)",
+  shop_sell: e => "Sold to the shop (" + e.n + " gold)",
+  quest_take: e => "Took a quest (" + (e.detail || "") + ")",
+  quest_done: e => "Finished a quest (" + (e.detail || "") + ")",
+};
+
+function renderStudentGame(ev) {
+  const note = document.getElementById("sg-note");
+  note.textContent = ev.since ? "Recorded since " + ev.since.slice(0, 10) + ". Counts cover the last 14 days." : "No events recorded for this student yet - they start once they play on a game version that includes the event log.";
+  const c = {};
+  ev.counts.forEach(x => { c[x.kind] = x.total; });
+  const tiles = [[c.level || 0, "levels gained"], [c.death || 0, "deaths"], [c.dungeon_in || 0, "dungeons entered"], [c.boss || 0, "bosses beaten"], [(c.craft || 0) + (c.enchant || 0), "crafts and enchants"], [c.quest_done || 0, "quests done"]];
+  document.getElementById("sg-tiles").innerHTML = tiles.map(t => "<div class='tile'><div class='num'>" + t[0] + "</div><div class='lbl'>" + t[1] + "</div></div>").join("");
+  const dmax = Math.max(1, ...ev.deaths.map(d => d.deaths));
+  evListRows(document.getElementById("sg-deaths"), ev.deaths.map(d => ({ label: placeLabel(d.place), value: d.deaths, colour: "var(--danger)", text: d.deaths + " death" + (d.deaths === 1 ? "" : "s") })), dmax, "No deaths recorded.");
+  renderGoldBars(document.getElementById("sg-gold"), ev.gold_days);
+  const rec = document.getElementById("sg-recent");
+  rec.innerHTML = "";
+  if (ev.recent.length === 0) rec.innerHTML = "<em class='hint'>Nothing recorded yet.</em>";
+  ev.recent.forEach(e => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    const f = EVENT_TEXT[e.kind];
+    row.innerHTML = "<div>" + escapeHtml(f ? f(e) : e.kind) + "</div><div class='meta'>" + escapeHtml(new Date(e.at).toLocaleString()) + "</div>";
+    rec.appendChild(row);
+  });
+}
+
 function evListRows(el, rows, maxVal, empty) {
   el.innerHTML = "";
   if (rows.length === 0) { el.innerHTML = "<em class='hint'>" + empty + "</em>"; return; }
@@ -996,6 +1077,18 @@ function renderEvents() {
     tr.innerHTML = "<td>" + b[0].toUpperCase() + b.slice(1) + "</td><td>" + en.total + " <span class='meta'>(" + en.students + " students)</span></td><td>" + out.total + "</td><td>" + bs.total + " <span class='meta'>(" + bs.students + " students)</span></td><td>" + deathsIn(b) + "</td>";
     tb.appendChild(tr);
   });
+
+  const hs = document.getElementById("overview-hotspots");
+  hs.innerHTML = "";
+  if (!e.since) hs.innerHTML = "<em class='hint'>No game events recorded yet.</em>";
+  else if (e.hotspots.length === 0) hs.innerHTML = "<em>No hotspots right now.</em>";
+  e.hotspots.forEach(h => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = "<div><strong>" + escapeHtml(placeLabel(h.place)) + "</strong> <span class='chip high'>Hotspot</span><div class='meta'>" + h.deaths + " deaths across " + h.students + " students</div></div>";
+    hs.appendChild(row);
+  });
+  renderGoldBars(document.getElementById("ev-gold"), e.gold_days);
 
   const n = e.students_total;
   evListRows(document.getElementById("ev-panels"), e.panels.map(p => ({ label: PANEL_LABELS[p.feature] || p.feature, value: p.students, text: p.students + " / " + n + " &middot; " + p.uses + " opens" })), Math.max(1, n), "No menus opened.");
@@ -1376,6 +1469,7 @@ async function openStudent(classId, studentId, returnTab) {
     el.appendChild(wrap);
   });
 
+  renderStudentGame(data.events);
   selectTab("student-tabs", "stab-", "summary");
   show("view-student");
 }

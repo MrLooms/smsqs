@@ -441,5 +441,43 @@ export async function classEvents(classId: number) {
       shop_buys: m.shop_buy ?? 0, shop_sells: m.shop_sell ?? 0,
     };
   });
-  return { since: since[0]?.first ?? null, deaths, dungeon, panels, students, quits, students_total: roster.length };
+  const gold_days = await dbAll<{ day: string; gold_in: number; gold_out: number }>(
+    `SELECT to_char(at::date, 'YYYY-MM-DD') AS day,
+       COALESCE(SUM(n) FILTER (WHERE kind = 'gold_in'), 0)::int AS gold_in, COALESCE(SUM(n) FILTER (WHERE kind = 'gold_out'), 0)::int AS gold_out
+     FROM game_events WHERE kind IN ('gold_in', 'gold_out') AND at >= CURRENT_DATE - 13 AND ${inClass} GROUP BY 1 ORDER BY 1`,
+    [classId]
+  );
+  // a place where several students keep dying is worth a look (too hard? too crowded? a bug?)
+  const hotspots = deaths.filter((d) => d.students >= 3 && d.deaths >= 8);
+  return { since: since[0]?.first ?? null, deaths, hotspots, gold_days, dungeon, panels, students, quits, students_total: roster.length };
+}
+
+// One student's own event picture (the student page's Game tab): where they die, gold by day, and the latest things they did.
+export async function studentEvents(studentId: number) {
+  const deaths = await dbAll<{ place: string; deaths: number }>(
+    `SELECT detail AS place, SUM(n)::int AS deaths FROM game_events
+     WHERE user_id = ? AND kind = 'death' AND at >= now() - interval '14 days' GROUP BY detail ORDER BY 2 DESC`,
+    [studentId]
+  );
+  const gold_days = await dbAll<{ day: string; gold_in: number; gold_out: number }>(
+    `SELECT to_char(at::date, 'YYYY-MM-DD') AS day,
+       COALESCE(SUM(n) FILTER (WHERE kind = 'gold_in'), 0)::int AS gold_in, COALESCE(SUM(n) FILTER (WHERE kind = 'gold_out'), 0)::int AS gold_out
+     FROM game_events WHERE user_id = ? AND kind IN ('gold_in', 'gold_out') AND at >= CURRENT_DATE - 13 GROUP BY 1 ORDER BY 1`,
+    [studentId]
+  );
+  const counts = await dbAll<{ kind: string; total: number }>(
+    `SELECT kind, SUM(n)::int AS total FROM game_events WHERE user_id = ? AND at >= now() - interval '14 days' GROUP BY kind`,
+    [studentId]
+  );
+  const panels = await dbAll<{ feature: string; uses: number }>(
+    `SELECT detail AS feature, SUM(n)::int AS uses FROM game_events
+     WHERE user_id = ? AND kind = 'panel' AND at >= now() - interval '14 days' GROUP BY detail ORDER BY 2 DESC`,
+    [studentId]
+  );
+  const recent = await dbAll<{ kind: string; detail: string; n: number; at: string }>(
+    `SELECT kind, detail, n, at FROM game_events WHERE user_id = ? AND kind <> 'panel' AND kind NOT IN ('gold_in', 'gold_out') ORDER BY at DESC LIMIT 30`,
+    [studentId]
+  );
+  const since = await dbAll<{ first: string | null }>("SELECT MIN(at) AS first FROM game_events WHERE user_id = ?", [studentId]);
+  return { since: since[0]?.first ?? null, deaths, gold_days, counts, panels, recent };
 }

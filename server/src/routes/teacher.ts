@@ -8,7 +8,7 @@ import { parseCsv } from "../csv";
 import { isUsernameAllowed } from "../usernameFilter";
 import { sendPasswordResetEmail } from "../email";
 import { parseTutorial, CHECKLIST_ITEMS, FEATURE_TOURS } from "../tutorial";
-import { classInsights, studentInsights, classActivity, classProgress, classEvents } from "../insights";
+import { classInsights, studentInsights, classActivity, classProgress, classEvents, studentEvents } from "../insights";
 
 const router = Router();
 
@@ -367,7 +367,9 @@ router.get("/classes/:id/students/:studentId", ah(async (req: AuthedRequest, res
   const ci = await classInsights(classId);
   const mine = ci.students.find((x) => x.student_id === studentId);
   const si = await studentInsights(classId, studentId);
+  const sev = await studentEvents(studentId);
   res.json({
+    events: sev,
     insights: { flags: mine?.flags ?? [], topics: si.topics, weekly: si.weekly, accuracy_7d: mine?.accuracy_7d ?? null, class_accuracy: ci.summary.accuracy },
     student: { id: studentId, username: member.username },
     overall,
