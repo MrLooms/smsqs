@@ -45,6 +45,7 @@ export async function deleteAccountRows(
   await query("DELETE FROM play_sessions WHERE user_id = ?", [id]);
   await query("DELETE FROM play_activity WHERE user_id = ?", [id]);
   await query("DELETE FROM tutorial_events WHERE user_id = ?", [id]);
+  await query("DELETE FROM game_events WHERE user_id = ?", [id]);
   await query("DELETE FROM dungeon_runs WHERE user_id = ?", [id]);
   await query("DELETE FROM question_attempts WHERE student_id = ?", [id]);
   await query("DELETE FROM class_members WHERE student_id = ?", [id]);

@@ -1,4 +1,5 @@
 import { PLAY_AREAS } from "./activity";
+import { cleanDetail } from "./events";
 import { isTestName } from "./testAccount";
 import express from "express";
 import cors from "cors";
@@ -246,18 +247,19 @@ app.post("/api/heartbeat", requireAuth, ah(async (req: AuthedRequest, res) => {
   const area = PLAY_AREAS.includes(String(req.body?.area)) ? String(req.body.area) : "other";
   const active = req.body?.active === true;
   const build = String(req.body?.build ?? "").slice(0, 24);
+  const place = cleanDetail(req.body?.place);
 
   const row = await dbGet<{ gap: number }>(
     "SELECT EXTRACT(EPOCH FROM (now() - last_seen))::float AS gap FROM play_sessions WHERE sid = ? AND user_id = ?",
     [sid, req.userId!]
   );
   if (!row) {
-    await dbRun("INSERT INTO play_sessions (sid, user_id, build) VALUES (?, ?, ?) ON CONFLICT DO NOTHING", [sid, req.userId!, build]);
+    await dbRun("INSERT INTO play_sessions (sid, user_id, build, last_place) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING", [sid, req.userId!, build, place]);
     return res.json({ ok: true });
   }
   if (row.gap < 10) return res.json({ ok: true }); // too soon after the last one - ignore (a buggy or spamming client)
   const secs = active ? Math.min(Math.round(row.gap), 150) : 0;
-  await dbRun("UPDATE play_sessions SET last_seen = now(), active_seconds = active_seconds + ? WHERE sid = ?", [secs, sid]);
+  await dbRun("UPDATE play_sessions SET last_seen = now(), active_seconds = active_seconds + ?, last_place = ? WHERE sid = ?", [secs, place, sid]);
   if (secs > 0) {
     await dbRun(
       "INSERT INTO play_activity (user_id, day, area, seconds) VALUES (?, CURRENT_DATE, ?, ?) ON CONFLICT (user_id, day, area) DO UPDATE SET seconds = play_activity.seconds + EXCLUDED.seconds",

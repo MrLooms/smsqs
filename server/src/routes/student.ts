@@ -6,6 +6,7 @@ import { HouseState, parseHouse, cleanPlaced, cleanChest, houseToClient, FLOORS,
 import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import { inSameParty } from "../party";
 import { parseTutorial, tutorialToClient, isTutId, isStepId, CHECKLIST_ITEMS } from "../tutorial";
+import { EVENT_KINDS, cleanDetail } from "../events";
 import {
   LorekinState, parseState as parseLorekin, toClient as lorekinToClient, pickSpecies, cleanName,
   DEFAULT_NAMES, incubateMs, BOOST_MS, MAX_COLLECTION, LorekinEntry, newEntry, addXp, xpNext, rarityOf,
@@ -478,6 +479,22 @@ router.post("/lorekin/debug_ready", requireAuth, requireRole("student"), ah(asyn
   });
   if (out.error) return res.json({ ok: false, error: out.error, lorekin: out.state });
   res.json({ ok: true, lorekin: out.state });
+}));
+
+// Milestone 307: the game's event log. The game queues events and sends them in batches (about once a minute and on logout):
+// { events: [{ k: "death", d: "dungeon:desert", n: 1 }, ...] }. Anything not on the allowlist is dropped, so a client can never fill the
+// table with junk; at most 60 events per request.
+router.post("/events", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const list = Array.isArray(req.body?.events) ? req.body.events.slice(0, 60) : [];
+  let saved = 0;
+  for (const e of list) {
+    const kind = typeof e?.k === "string" ? e.k : "";
+    if (!EVENT_KINDS.includes(kind)) continue;
+    const n = Number.isFinite(Number(e?.n)) ? Math.max(1, Math.min(1000000, Math.round(Number(e.n)))) : 1;
+    await dbRun("INSERT INTO game_events (user_id, kind, detail, n) VALUES (?, ?, ?, ?)", [req.userId!, kind, cleanDetail(e?.d), n]);
+    saved++;
+  }
+  res.json({ ok: true, saved });
 }));
 
 // Milestone 297: tutorial progress (tutorial.ts). The game reports each step the player reaches and when a tutorial ends; "done" answers

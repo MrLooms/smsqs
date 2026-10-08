@@ -268,6 +268,22 @@ export async function initDb() {
     );
     CREATE INDEX IF NOT EXISTS tutorial_events_tut ON tutorial_events(tut, kind, step);
   `);
+  // Milestone 307: the game event log (deaths, level-ups, dungeon entries, feature use, gold...) - see events.ts. Plain append-only rows,
+  // written in batches by the game; the teacher dashboard sums them per class.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS game_events (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      kind TEXT NOT NULL,
+      detail TEXT NOT NULL DEFAULT '',
+      n INTEGER NOT NULL DEFAULT 1,
+      at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS game_events_user ON game_events(user_id, at);
+    CREATE INDEX IF NOT EXISTS game_events_kind ON game_events(kind, at);
+  `);
+  // where the session was when the last heartbeat arrived - "where do students stop playing"
+  await pool.query("ALTER TABLE play_sessions ADD COLUMN IF NOT EXISTS last_place TEXT");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_x INTEGER");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_y INTEGER");
   // Milestone 185: LPC character customization (phase 2) - which variant of each layer

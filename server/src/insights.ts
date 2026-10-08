@@ -376,3 +376,70 @@ export async function classProgress(classId: number) {
   const median = levels.length ? levels[Math.floor(levels.length / 2)] : null;
   return { boss_order: BOSS_ORDER, students, median_level: median };
 }
+
+// Milestone 307: the event log rolled up for a class (last 14 days) - where students die, how dungeon runs go, which menus get used,
+// gold, level pace, and where sessions end. Everything is a plain count so it can be read at a glance.
+export async function classEvents(classId: number) {
+  const inClass = "user_id IN (SELECT student_id FROM class_members WHERE class_id = ?)";
+  const since = await dbAll<{ first: string | null }>(`SELECT MIN(at) AS first FROM game_events WHERE ${inClass}`, [classId]);
+  const deaths = await dbAll<{ place: string; deaths: number; students: number }>(
+    `SELECT detail AS place, SUM(n)::int AS deaths, COUNT(DISTINCT user_id)::int AS students
+     FROM game_events WHERE kind = 'death' AND at >= now() - interval '14 days' AND ${inClass}
+     GROUP BY detail ORDER BY 2 DESC LIMIT 12`,
+    [classId]
+  );
+  const dungeon = await dbAll<{ kind: string; biome: string; total: number; students: number }>(
+    `SELECT kind, detail AS biome, SUM(n)::int AS total, COUNT(DISTINCT user_id)::int AS students
+     FROM game_events WHERE kind IN ('dungeon_in', 'dungeon_out', 'boss') AND at >= now() - interval '14 days' AND ${inClass}
+     GROUP BY kind, detail`,
+    [classId]
+  );
+  const panels = await dbAll<{ feature: string; uses: number; students: number }>(
+    `SELECT detail AS feature, SUM(n)::int AS uses, COUNT(DISTINCT user_id)::int AS students
+     FROM game_events WHERE kind = 'panel' AND at >= now() - interval '14 days' AND ${inClass}
+     GROUP BY detail ORDER BY 3 DESC, 2 DESC`,
+    [classId]
+  );
+  const per = await dbAll<{ user_id: number; kind: string; total: number }>(
+    `SELECT user_id, kind, SUM(n)::int AS total
+     FROM game_events WHERE at >= now() - interval '14 days' AND ${inClass} GROUP BY user_id, kind`,
+    [classId]
+  );
+  const levels = await dbAll<{ user_id: number; top: number | null }>(
+    `SELECT user_id, MAX(CASE WHEN detail ~ '^[0-9]+$' THEN detail::int END) AS top
+     FROM game_events WHERE kind = 'level' AND at >= now() - interval '14 days' AND ${inClass} GROUP BY user_id`,
+    [classId]
+  );
+  const roster = await dbAll<{ student_id: number; username: string }>(
+    "SELECT u.id AS student_id, u.username FROM class_members m JOIN users u ON u.id = m.student_id WHERE m.class_id = ? ORDER BY u.username ASC",
+    [classId]
+  );
+  const quits = await dbAll<{ place: string; sessions: number; students: number }>(
+    `SELECT COALESCE(last_place, '') AS place, COUNT(*)::int AS sessions, COUNT(DISTINCT user_id)::int AS students
+     FROM play_sessions
+     WHERE ${inClass} AND started_at >= now() - interval '14 days' AND last_seen < now() - interval '5 minutes' AND active_seconds >= 60
+     GROUP BY 1 ORDER BY 2 DESC LIMIT 12`,
+    [classId]
+  );
+
+  const byUser = new Map<number, Record<string, number>>();
+  for (const r of per) {
+    const m = byUser.get(r.user_id) ?? {};
+    m[r.kind] = r.total;
+    byUser.set(r.user_id, m);
+  }
+  const topBy = new Map(levels.map((l) => [l.user_id, l.top]));
+  const students = roster.map((r) => {
+    const m = byUser.get(r.student_id) ?? {};
+    return {
+      student_id: r.student_id, username: r.username,
+      deaths: m.death ?? 0, levels_gained: m.level ?? 0, top_level: topBy.get(r.student_id) ?? null,
+      dungeons: m.dungeon_in ?? 0, bosses: m.boss ?? 0,
+      gold_in: m.gold_in ?? 0, gold_out: m.gold_out ?? 0,
+      crafts: m.craft ?? 0, enchants: m.enchant ?? 0, hatches: m.hatch ?? 0,
+      quests_taken: m.quest_take ?? 0, quests_done: m.quest_done ?? 0,
+      shop_buys: m.shop_buy ?? 0, shop_sells: m.shop_sell ?? 0,
+    };
+  });
+  return { since: since[0]?.first ?? null, deaths, dungeon, panels, students, quits, students_total: roster.length };
+}

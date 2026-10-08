@@ -8,7 +8,7 @@ import { parseCsv } from "../csv";
 import { isUsernameAllowed } from "../usernameFilter";
 import { sendPasswordResetEmail } from "../email";
 import { parseTutorial, CHECKLIST_ITEMS, FEATURE_TOURS } from "../tutorial";
-import { classInsights, studentInsights, classActivity, classProgress } from "../insights";
+import { classInsights, studentInsights, classActivity, classProgress, classEvents } from "../insights";
 
 const router = Router();
 
@@ -259,6 +259,14 @@ router.get("/classes/:id/activity", ah(async (req: AuthedRequest, res) => {
   const cls = await dbGet("SELECT id FROM classes WHERE id = ? AND teacher_id = ?", [classId, req.userId!]);
   if (!cls) return res.status(404).json({ error: "Class not found" });
   res.json(await classActivity(classId));
+}));
+
+// Milestone 307: the event-log insights on the Game tab
+router.get("/classes/:id/events", ah(async (req: AuthedRequest, res) => {
+  const classId = Number(req.params.id);
+  const cls = await dbGet("SELECT id FROM classes WHERE id = ? AND teacher_id = ?", [classId, req.userId!]);
+  if (!cls) return res.status(404).json({ error: "Class not found" });
+  res.json(await classEvents(classId));
 }));
 
 // Milestone 305: the Game progress tab

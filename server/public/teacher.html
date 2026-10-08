@@ -359,6 +359,26 @@
       </tr></thead>
       <tbody></tbody>
     </table></div>
+    <h2 style="margin-top:28px; font-size:15px">Game insights - last 14 days</h2>
+    <p class="hint" id="ev-note"></p>
+    <h3>Where students die</h3>
+    <div id="ev-deaths"></div>
+    <h3>Dungeon runs</h3>
+    <table class="stats" id="ev-dungeons"><thead><tr><th>Biome</th><th>Entered</th><th>Left</th><th>Boss beaten</th><th>Deaths there</th></tr></thead><tbody></tbody></table>
+    <h3>Menus and features used</h3>
+    <p class="hint">How many students opened each one.</p>
+    <div id="ev-panels"></div>
+    <h3>Where sessions end</h3>
+    <p class="hint">The last place a student was when they stopped playing (sessions over a minute long). Lots of endings in one place can mean students get stuck, frustrated or bored there.</p>
+    <div id="ev-quits"></div>
+    <h3>By student</h3>
+    <div style="overflow-x:auto"><table class="stats" id="ev-table">
+      <thead><tr>
+        <th data-sort="username">Student</th><th data-sort="levels_gained">Levels gained</th><th data-sort="deaths">Deaths</th><th data-sort="dungeons">Dungeons</th><th data-sort="bosses">Bosses</th>
+        <th data-sort="crafts">Crafts</th><th data-sort="enchants">Enchants</th><th data-sort="quests_done">Quests done</th><th data-sort="gold_in">Gold in</th><th data-sort="gold_out">Gold out</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
   </div>
 
   <div class="card tabpane hidden" id="tab-assign">
@@ -764,12 +784,13 @@ function renderWeekly(el, weeks) {
 async function openClass(id, tab) {
   currentClassId = id;
   if (tab) currentClassTab = tab;
-  const [data, ins, an, act, prog] = await Promise.all([
+  const [data, ins, an, act, prog, evs] = await Promise.all([
     api("GET", "/api/teacher/classes/" + id),
     api("GET", `/api/teacher/classes/${id}/insights`),
     api("GET", `/api/teacher/classes/${id}/analytics`),
     api("GET", `/api/teacher/classes/${id}/activity`),
     api("GET", `/api/teacher/classes/${id}/progress`),
+    api("GET", `/api/teacher/classes/${id}/events`),
   ]);
   insightsCache = ins;
   document.getElementById("class-detail-name").textContent = data.class.name;
@@ -781,6 +802,8 @@ async function openClass(id, tab) {
   renderActivity(act);
   progressCache = prog;
   renderGame();
+  eventsCache = evs;
+  renderEvents();
   loadTraining(id);
 
   const assignedEl = document.getElementById("class-assigned");
@@ -921,6 +944,93 @@ function renderLearning(ins, an) {
     qb.appendChild(tr);
   });
 }
+
+// ---- Game insights from the event log (Milestone 307) ----
+let eventsCache = null;
+let evSort = { key: "deaths", dir: -1 };
+const PANEL_LABELS = { smith: "Smith", enchant: "Magus", lorekin: "Lorekin Keeper", wardrobe: "Wardrobe", dye: "Dye Gear", carpenter: "Carpenter", shop: "Shop", storage: "Storage chest",
+  quests: "Quest board", class_desk: "Class desk", party: "Party board", leaderboard: "Leaderboard", tier_keeper: "World Tier Keeper", warpstone: "Warpstone keeper", potions: "Potion Master",
+  tutor: "Tutor", book: "Book (inventory)", house: "House editor" };
+
+function placeLabel(p) {
+  if (!p) return "Unknown";
+  const parts = p.split(":");
+  const b = parts[1] ? parts[1][0].toUpperCase() + parts[1].slice(1) : "";
+  if (parts[0] === "world") return b + " overworld";
+  if (parts[0] === "dungeon") return b + " dungeon";
+  if (parts[0] === "boss") return b + " boss room";
+  if (parts[0] === "town") return "Town";
+  if (parts[0] === "training") return "Basic Training";
+  return p;
+}
+
+function evListRows(el, rows, maxVal, empty) {
+  el.innerHTML = "";
+  if (rows.length === 0) { el.innerHTML = "<em class='hint'>" + empty + "</em>"; return; }
+  rows.forEach(r => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = "<div style='min-width:200px'>" + escapeHtml(r.label) + "</div><div style='flex:1'>" + onbBar(r.value, maxVal, r.colour) + "</div><div style='width:170px; text-align:right'>" + r.text + "</div>";
+    el.appendChild(row);
+  });
+}
+
+function renderEvents() {
+  if (!eventsCache) return;
+  const e = eventsCache;
+  const note = document.getElementById("ev-note");
+  note.textContent = e.since ? "Recorded since " + e.since.slice(0, 10) + ". Counts cover the last 14 days." : "No events recorded yet - they start once students play on a game version that includes the event log.";
+
+  const dMax = Math.max(1, ...e.deaths.map(d => d.deaths));
+  evListRows(document.getElementById("ev-deaths"), e.deaths.map(d => ({ label: placeLabel(d.place), value: d.deaths, colour: "var(--danger)", text: d.deaths + " death" + (d.deaths === 1 ? "" : "s") + " &middot; " + d.students + " student" + (d.students === 1 ? "" : "s") })), dMax, "No deaths recorded.");
+
+  // dungeon runs per biome
+  const biomes = ["desert", "swamp", "ice", "lava"];
+  const val = (kind, b) => { const r = e.dungeon.find(x => x.kind === kind && x.biome === b); return r ? r : { total: 0, students: 0 }; };
+  const deathsIn = b => e.deaths.filter(d => d.place === "dungeon:" + b || d.place === "boss:" + b).reduce((a, d) => a + d.deaths, 0);
+  const tb = document.querySelector("#ev-dungeons tbody");
+  tb.innerHTML = "";
+  biomes.forEach(b => {
+    const en = val("dungeon_in", b), out = val("dungeon_out", b), bs = val("boss", b);
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td>" + b[0].toUpperCase() + b.slice(1) + "</td><td>" + en.total + " <span class='meta'>(" + en.students + " students)</span></td><td>" + out.total + "</td><td>" + bs.total + " <span class='meta'>(" + bs.students + " students)</span></td><td>" + deathsIn(b) + "</td>";
+    tb.appendChild(tr);
+  });
+
+  const n = e.students_total;
+  evListRows(document.getElementById("ev-panels"), e.panels.map(p => ({ label: PANEL_LABELS[p.feature] || p.feature, value: p.students, text: p.students + " / " + n + " &middot; " + p.uses + " opens" })), Math.max(1, n), "No menus opened.");
+
+  const qMax = Math.max(1, ...e.quits.map(q => q.sessions));
+  evListRows(document.getElementById("ev-quits"), e.quits.map(q => ({ label: placeLabel(q.place), value: q.sessions, colour: "var(--accent-2)", text: q.sessions + " session" + (q.sessions === 1 ? "" : "s") + " &middot; " + q.students + " student" + (q.students === 1 ? "" : "s") })), qMax, "No finished sessions recorded.");
+
+  const body = document.querySelector("#ev-table tbody");
+  body.innerHTML = "";
+  const list = e.students.slice();
+  const k = evSort.key, dir = evSort.dir;
+  list.sort((a, b) => {
+    if (k === "username") return dir * a.username.localeCompare(b.username);
+    return dir * ((a[k] || 0) - (b[k] || 0)) || a.username.localeCompare(b.username);
+  });
+  if (list.length === 0) body.innerHTML = "<tr><td colspan='10'><em>No students yet.</em></td></tr>";
+  list.forEach(s => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td><a class='link'>" + escapeHtml(s.username) + "</a></td><td>" + s.levels_gained + (s.top_level ? " <span class='meta'>(to Lv " + s.top_level + ")</span>" : "") + "</td><td>" + s.deaths + "</td><td>" + s.dungeons + "</td><td>" + s.bosses + "</td><td>" + s.crafts + "</td><td>" + s.enchants + "</td><td>" + s.quests_done + "</td><td>" + s.gold_in + "</td><td>" + s.gold_out + "</td>";
+    tr.querySelector("a").onclick = () => openStudent(currentClassId, s.student_id, "game");
+    body.appendChild(tr);
+  });
+  document.querySelectorAll("#ev-table th").forEach(th => {
+    const base = th.textContent.replace(/ [▲▼]$/, "");
+    th.textContent = base + (th.dataset.sort === k ? (dir > 0 ? " ▲" : " ▼") : "");
+  });
+}
+document.querySelectorAll("#ev-table th").forEach(th => {
+  th.style.cursor = "pointer";
+  th.onclick = () => {
+    const k = th.dataset.sort;
+    evSort = evSort.key === k ? { key: k, dir: -evSort.dir } : { key: k, dir: k === "username" ? 1 : -1 };
+    renderEvents();
+  };
+});
 
 // ---- Game tab (Milestone 305) ----
 let progressCache = null;
