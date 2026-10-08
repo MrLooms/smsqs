@@ -59,6 +59,7 @@ export interface CharacterState {
   lorekin?: unknown;
   house?: unknown; // Milestone 262: read-only here too - changed through /api/house/*
   tutorial?: unknown; // Milestone 297: read-only here too - changed through /api/tutorial/*
+  discovery?: unknown; // Milestone 311: read-only here too - changed through /api/discovery/*
 }
 
 export const DEFAULT_APPEARANCE: Appearance = {

@@ -284,6 +284,8 @@ export async function initDb() {
   `);
   // where the session was when the last heartbeat arrived - "where do students stop playing"
   await pool.query("ALTER TABLE play_sessions ADD COLUMN IF NOT EXISTS last_place TEXT");
+  // Milestone 311: overworld discovery progress (wisps found, milestones paid) - see discovery.ts
+  await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS discovery_json TEXT NOT NULL DEFAULT '{}'");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_x INTEGER");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_y INTEGER");
   // Milestone 185: LPC character customization (phase 2) - which variant of each layer

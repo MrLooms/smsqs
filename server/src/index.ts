@@ -13,6 +13,7 @@ import { isUsernameAllowed } from "./usernameFilter";
 import { parseState as parseLorekin, toClient as lorekinToClient, fillAllSpecies } from "./lorekin";
 import { parseHouse, houseToClient } from "./house";
 import { parseTutorial, tutorialToClient } from "./tutorial";
+import { parseDiscovery, discoveryToClient } from "./discovery";
 import teacherRouter from "./routes/teacher";
 import studentRouter from "./routes/student";
 import { attachMultiplayer } from "./ws";
@@ -76,6 +77,7 @@ async function loadCharacter(userId: number): Promise<CharacterState> {
     lorekin: lorekinToClient(lk),
     house: houseToClient(hs.state),
     tutorial: tutorialToClient(parseTutorial(row.tutorial_json)),
+    discovery: discoveryToClient(parseDiscovery(row.discovery_json)),
   };
 }
 
