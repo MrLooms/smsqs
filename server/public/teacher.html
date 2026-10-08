@@ -285,8 +285,8 @@
       <button data-tab="students">Students</button>
       <button data-tab="learning">Learning</button>
       <button data-tab="activity">Activity</button>
-      <button data-tab="game">Game</button>
       <button data-tab="assign">Assign</button>
+      <button data-tab="game">Game</button>
       <button data-tab="onboarding">Onboarding</button>
     </div>
   </div>
@@ -370,12 +370,22 @@
     </div>
   </div>
   <div class="card tabpane hidden" id="tab-onboarding">
-    <h3 style="margin-top:0">Basic Training</h3>
-    <p class="hint">New students play a short guided training on their first login. Reset sends a student (or everyone) back through it.</p>
-    <div id="class-training"></div>
-    <div class="row" style="margin-top:10px"><button class="secondary" id="btn-training-reset-all">Reset training for the whole class</button></div>
+    <div class="tiles" id="onb-tiles"></div>
+    <h3>Students</h3>
+    <p class="hint">Basic Training is the guided first-login tutorial; Getting Started is the checklist of first goals (7 items) that pays a Common Egg; the tours explain each building's menu the first time it opens. Players who were already playing when tutorials arrived skip Basic Training and the checklist.</p>
+    <div style="overflow-x:auto"><table class="stats" id="onb-table">
+      <thead><tr><th>Student</th><th>Basic Training</th><th>Getting Started</th><th>Feature tours</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <div class="row" style="margin-top:10px"><button class="secondary" id="btn-training-reset-all">Reset Basic Training for the whole class</button></div>
+    <h3>Basic Training: how far students get</h3>
+    <p class="hint">Students who reached each step, in order. A big drop between two steps is where students get stuck.</p>
+    <div id="onb-funnel"></div>
+    <h3>Getting Started checklist</h3>
+    <div id="onb-checklist"></div>
+    <h3>Feature tours seen</h3>
+    <div id="onb-tours"></div>
   </div>
-
 </section>
 
 <!-- STUDENT DETAIL VIEW (tabs) -->
@@ -1041,38 +1051,125 @@ function renderActivity(act) {
     : "Last 14 days: " + act.areas.map(a => (names[a.area] || a.area) + " " + fmtDuration(a.seconds)).join(" · ");
 }
 
-// ---- Basic Training progress (Milestone 297) - the Onboarding tab ----
+// ---- Onboarding tab: Basic Training, Getting Started checklist, feature tours (Milestones 297, 306) ----
+const BT_STEPS = [
+  ["welcome", "Welcome"], ["move", "Walk to the marker"], ["pickup", "Pick up the sword"], ["book", "Open the book"], ["equip", "Equip the sword"],
+  ["unbook", "Close the book"], ["attack", "Hit the dummy"], ["dodge", "Dodge"], ["flask", "Drink a potion"], ["tutor", "Talk to the Tutor"],
+  ["tutor_close", "Close the Tutor"], ["shrine", "Answer the shrine"], ["reward", "Take the rewards"], ["leave", "Leave the room"],
+];
+const CHECKLIST_LABELS = { class: "Join a class", quest: "Take a quest", craft: "Craft an item", home: "Visit your home", dungeon: "Enter a dungeon", boss: "Defeat a dungeon boss", crystal: "Spend a crystal charge" };
+const CHECKLIST_ORDER = ["class", "quest", "craft", "home", "dungeon", "boss", "crystal"];
+const TOUR_LABELS = { f_house: "House editor", f_smith: "Smith", f_enchant: "Magus", f_lorekin: "Lorekin Keeper", f_wardrobe: "Wardrobe", f_carpenter: "Carpenter" };
+
+function onbBar(count, total, colour) {
+  const w = total > 0 ? Math.round(100 * count / total) : 0;
+  return `<span class="bar" style="width:100%; max-width:300px"><span style="width:${w}%; background:${colour || "var(--accent)"}"></span></span>`;
+}
+
 async function loadTraining(classId) {
-  const el = document.getElementById('class-training');
-  el.innerHTML = '';
   let data;
-  try { data = await api('GET', '/api/teacher/classes/' + classId + '/tutorial'); } catch (e) { el.innerHTML = '<em>' + escapeHtml(e.message) + '</em>'; return; }
-  if (data.students.length === 0) { el.innerHTML = '<em>No students yet.</em>'; return; }
-  const label = { done: 'Finished', skipped: 'Skipped', existing: 'Was already playing', in_progress: 'In progress', not_started: 'Not started' };
-  data.students.forEach(s => {
-    const row = document.createElement('div');
-    row.className = 'list-item';
-    row.innerHTML = '<div>' + escapeHtml(s.username) + '<div class="meta">' + label[s.status] + (s.status === 'in_progress' && s.step ? ' - on step: ' + escapeHtml(s.step) : '') + '</div></div>';
-    const btn = document.createElement('button');
-    btn.className = 'secondary';
-    btn.textContent = 'Reset';
+  try { data = await api("GET", "/api/teacher/classes/" + classId + "/tutorial"); }
+  catch (e) { document.getElementById("onb-table").querySelector("tbody").innerHTML = "<tr><td colspan='5'><em>" + escapeHtml(e.message) + "</em></td></tr>"; return; }
+  const label = { done: "Finished", skipped: "Skipped", existing: "Was already playing", in_progress: "In progress", not_started: "Not started" };
+  const stepName = {};
+  BT_STEPS.forEach(x => { stepName[x[0]] = x[1]; });
+  const list = data.students;
+  const n = list.length;
+  const counted = list.filter(s => s.status !== "existing"); // players who were already playing never had Basic Training
+  const finished = counted.filter(s => s.status === "done").length;
+  const skipped = counted.filter(s => s.status === "skipped").length;
+  const inProg = counted.filter(s => s.status === "in_progress").length;
+  const notStarted = counted.filter(s => s.status === "not_started").length;
+  const cl = list.filter(s => !s.checklist.legacy);
+  const clDone = cl.filter(s => s.checklist.done).length;
+
+  const tiles = [
+    [finished + " / " + counted.length, "finished Basic Training"],
+    [skipped, "skipped it"],
+    [inProg + notStarted, "still to finish it"],
+    [cl.length === 0 ? "—" : clDone + " / " + cl.length, "completed Getting Started"],
+  ];
+  document.getElementById("onb-tiles").innerHTML = tiles.map(t => "<div class='tile'><div class='num'>" + t[0] + "</div><div class='lbl'>" + t[1] + "</div></div>").join("");
+
+  const body = document.getElementById("onb-table").querySelector("tbody");
+  body.innerHTML = "";
+  if (n === 0) body.innerHTML = "<tr><td colspan='5'><em>No students yet.</em></td></tr>";
+  list.forEach(s => {
+    const tr = document.createElement("tr");
+    const bt = label[s.status] + (s.status === "in_progress" && s.step ? " - on " + escapeHtml(stepName[s.step] || s.step) : "");
+    const ck = s.checklist.legacy ? "<span class='meta'>n/a</span>"
+      : (s.checklist.done ? "<span class='accuracy-good'>Done</span>" : s.checklist.ticked.length + " / " + data.checklist_items.length);
+    const dots = data.tour_ids.map(t => {
+      const seen = s.tours.includes(t);
+      return "<span class='chip " + (seen ? "watch" : "") + "' style='" + (seen ? "" : "background:var(--panel-2); color:var(--muted)") + "' title='" + escapeHtml(TOUR_LABELS[t] || t) + (seen ? " - seen" : " - not yet") + "'>" + escapeHtml((TOUR_LABELS[t] || t)[0]) + "</span>";
+    }).join(" ");
+    tr.innerHTML = "<td>" + escapeHtml(s.username) + "</td><td>" + bt + "</td><td>" + ck + "</td><td>" + dots + "</td><td></td>";
+    const btn = document.createElement("button");
+    btn.className = "secondary";
+    btn.textContent = "Reset";
+    btn.title = "Send this student back through Basic Training";
     btn.onclick = async () => {
-      await api('POST', '/api/teacher/classes/' + classId + '/tutorial/reset', { student_id: s.student_id });
+      if (!confirm("Send " + s.username + " back through Basic Training?")) return;
+      await api("POST", "/api/teacher/classes/" + classId + "/tutorial/reset", { student_id: s.student_id });
       loadTraining(classId);
     };
-    row.appendChild(btn);
-    el.appendChild(row);
+    tr.lastChild.appendChild(btn);
+    body.appendChild(tr);
   });
-  if (data.steps.length > 0) {
-    const sum = document.createElement('div');
-    sum.className = 'meta';
-    sum.style.marginTop = '8px';
-    sum.textContent = 'Students who reached each step: ' + data.steps.map(x => x.step + ' ' + x.students).join(' / ');
-    el.appendChild(sum);
+
+  // funnel: students who reached each step (events are logged per step), then finished
+  const reached = {};
+  data.steps.forEach(x => { reached[x.step] = x.students; });
+  const fun = document.getElementById("onb-funnel");
+  fun.innerHTML = "";
+  const total = counted.length;
+  if (total === 0) fun.innerHTML = "<em class='hint'>No students have started Basic Training yet.</em>";
+  else {
+    let prev = null;
+    BT_STEPS.forEach(x => {
+      const c = reached[x[0]] || 0;
+      const drop = prev === null ? 0 : prev - c;
+      const bad = prev !== null && drop >= Math.max(2, Math.ceil(total * 0.2));
+      const row = document.createElement("div");
+      row.className = "list-item";
+      row.innerHTML = "<div style='min-width:180px'>" + escapeHtml(x[1]) + "</div><div style='flex:1'>" + onbBar(c, total, bad ? "var(--danger)" : "var(--accent)") + "</div><div style='width:130px; text-align:right'>" + c + (bad ? " <span class='meta' style='color:var(--danger)'>(" + drop + " fewer)</span>" : "") + "</div>";
+      fun.appendChild(row);
+      prev = c;
+    });
+    const fr = document.createElement("div");
+    fr.className = "list-item";
+    fr.innerHTML = "<div style='min-width:180px'><strong>Finished</strong></div><div style='flex:1'>" + onbBar(finished, total, "var(--ok)") + "</div><div style='width:130px; text-align:right'>" + finished + "</div>";
+    fun.appendChild(fr);
   }
-  document.getElementById('btn-training-reset-all').onclick = async () => {
-    if (!confirm('Send every student in this class back through Basic Training?')) return;
-    await api('POST', '/api/teacher/classes/' + classId + '/tutorial/reset', {});
+
+  // checklist items
+  const ce = document.getElementById("onb-checklist");
+  ce.innerHTML = "";
+  if (cl.length === 0) ce.innerHTML = "<em class='hint'>Nobody in this class has the checklist yet.</em>";
+  else CHECKLIST_ORDER.forEach(id => {
+    if (!data.checklist_items.includes(id)) return;
+    const c = cl.filter(s => s.checklist.done || s.checklist.ticked.includes(id)).length;
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = "<div style='min-width:180px'>" + escapeHtml(CHECKLIST_LABELS[id] || id) + "</div><div style='flex:1'>" + onbBar(c, cl.length) + "</div><div style='width:130px; text-align:right'>" + c + " / " + cl.length + "</div>";
+    ce.appendChild(row);
+  });
+
+  // tours
+  const te = document.getElementById("onb-tours");
+  te.innerHTML = "";
+  if (n === 0) te.innerHTML = "<em class='hint'>No students yet.</em>";
+  data.tour_ids.forEach(id => {
+    const c = list.filter(s => s.tours.includes(id)).length;
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = "<div style='min-width:180px'>" + escapeHtml(TOUR_LABELS[id] || id) + "</div><div style='flex:1'>" + onbBar(c, n) + "</div><div style='width:130px; text-align:right'>" + c + " / " + n + "</div>";
+    te.appendChild(row);
+  });
+
+  document.getElementById("btn-training-reset-all").onclick = async () => {
+    if (!confirm("Send every student in this class back through Basic Training?")) return;
+    await api("POST", "/api/teacher/classes/" + classId + "/tutorial/reset", {});
     loadTraining(classId);
   };
 }

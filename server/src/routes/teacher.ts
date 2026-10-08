@@ -7,7 +7,7 @@ import { ah } from "../asyncHandler";
 import { parseCsv } from "../csv";
 import { isUsernameAllowed } from "../usernameFilter";
 import { sendPasswordResetEmail } from "../email";
-import { parseTutorial } from "../tutorial";
+import { parseTutorial, CHECKLIST_ITEMS, FEATURE_TOURS } from "../tutorial";
 import { classInsights, studentInsights, classActivity, classProgress } from "../insights";
 
 const router = Router();
@@ -388,6 +388,13 @@ router.get("/classes/:id/tutorial", ah(async (req: AuthedRequest, res) => {
       username: r.username,
       status: doneAt ? (doneAt <= 1 ? "existing" : (st.skipped["basic"] ? "skipped" : "done")) : (st.step["basic"] ? "in_progress" : "not_started"),
       step: st.step["basic"] ?? null,
+      // Milestone 306: Getting Started checklist and the feature tours (a legacy player - already playing before tutorials - has no checklist)
+      checklist: {
+        legacy: st.done["basic"] === 1 && !st.done["checklist"],
+        done: !!st.done["checklist"] && st.done["checklist"] !== 1,
+        ticked: (st.ticks["checklist"] ?? []).filter((i) => CHECKLIST_ITEMS.includes(i)),
+      },
+      tours: FEATURE_TOURS.filter((t) => st.done[t]),
     };
   });
   const steps = await dbAll<{ step: string; students: number }>(
@@ -396,7 +403,7 @@ router.get("/classes/:id/tutorial", ah(async (req: AuthedRequest, res) => {
      WHERE m.class_id = ? AND e.tut = 'basic' AND e.kind = 'step' GROUP BY e.step`,
     [classId]
   );
-  res.json({ students, steps });
+  res.json({ students, steps, checklist_items: CHECKLIST_ITEMS, tour_ids: FEATURE_TOURS });
 }));
 
 // Milestone 297: send a student (body { student_id }) - or the whole class (no student_id) - back through Basic Training. Their other

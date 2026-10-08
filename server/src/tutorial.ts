@@ -15,6 +15,9 @@ export interface TutorialState {
 // Milestone 299: the Getting Started checklist. Finishing it (every item ticked) pays the Common Egg, once.
 export const CHECKLIST_ITEMS = ["class", "quest", "home", "craft", "dungeon", "boss", "crystal"];
 
+// Milestone 301: the first-time feature tours (scr_feature_tours.gml in the game) - one finished id each.
+export const FEATURE_TOURS = ["f_house", "f_smith", "f_enchant", "f_lorekin", "f_wardrobe", "f_carpenter"];
+
 export function freshTutorial(): TutorialState {
   return { done: {}, skipped: {}, step: {}, ticks: {} };
 }
