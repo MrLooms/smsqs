@@ -311,3 +311,68 @@ export async function classActivity(classId: number) {
   });
   return { days, students, class_days, areas };
 }
+
+// Milestone 305: the Game progress tab - where each student is in the game. Read straight off the saved character, nothing new is
+// collected. The "stage" follows the game's own order: a dungeon needs the previous biome's boss trophy, so the first biome with no
+// boss kill is where the student is working now.
+const BOSS_ORDER = ["desert", "swamp", "ice", "lava"];
+const HOME_TIERS = ["Cottage", "House", "Manor"];
+
+export function progressStage(bossKills: Record<string, number>, endlessBest: number): string {
+  for (const b of BOSS_ORDER) {
+    if (!(bossKills[b] > 0)) return b === "desert" ? "Forest - heading for the Desert" : "Working on the " + b[0].toUpperCase() + b.slice(1);
+  }
+  return endlessBest > 0 ? "Endless Dungeon" : "All four bosses beaten";
+}
+
+export async function classProgress(classId: number) {
+  const rows = await dbAll<any>(
+    `SELECT u.id AS student_id, u.username, u.endless_best, c.level, c.xp, c.inventory_json, c.lorekin_json, c.house_json,
+       (SELECT COUNT(*)::int FROM dungeon_runs d WHERE d.user_id = u.id) AS runs_total,
+       (SELECT COUNT(*)::int FROM dungeon_runs d WHERE d.user_id = u.id AND d.completed_at >= now() - interval '14 days') AS runs_14d,
+       (SELECT MAX(d.completed_at) FROM dungeon_runs d WHERE d.user_id = u.id) AS last_run
+     FROM class_members m JOIN users u ON u.id = m.student_id LEFT JOIN characters c ON c.user_id = u.id
+     WHERE m.class_id = ? ORDER BY u.username ASC`,
+    [classId]
+  );
+  const students = rows.map((r) => {
+    let bossKills: Record<string, number> = {};
+    let tier = 0;
+    try {
+      const inv = JSON.parse(r.inventory_json ?? "[]");
+      const badge = Array.isArray(inv) ? inv.find((i: any) => i && i.badge) : undefined;
+      if (badge) {
+        bossKills = badge.boss_kills && typeof badge.boss_kills === "object" ? badge.boss_kills : {};
+        tier = Number.isInteger(badge.max_unlocked_tier) ? badge.max_unlocked_tier : 0;
+      }
+    } catch { /* defaults */ }
+    let lorekin = 0, topLorekin = 0;
+    try {
+      const list = JSON.parse(r.lorekin_json ?? "{}").list ?? [];
+      lorekin = list.length;
+      for (const e of list) if (Number.isInteger(e.level) && e.level > topLorekin) topLorekin = e.level;
+    } catch { /* 0 */ }
+    let home = "—", placed = 0;
+    try {
+      const h = JSON.parse(r.house_json ?? "{}");
+      home = HOME_TIERS[Number.isInteger(h.tier) ? Math.max(0, Math.min(2, h.tier)) : 0];
+      placed = Array.isArray(h.placed) ? h.placed.length : 0;
+    } catch { /* defaults */ }
+    const kills = BOSS_ORDER.reduce((n, b) => n + (bossKills[b] > 0 ? bossKills[b] : 0), 0);
+    return {
+      student_id: r.student_id, username: r.username,
+      level: r.level ?? null,
+      stage: progressStage(bossKills, r.endless_best ?? 0),
+      world_tier: tier,
+      boss_kills: BOSS_ORDER.map((b) => bossKills[b] > 0 ? bossKills[b] : 0),
+      boss_kills_total: kills,
+      runs_total: r.runs_total, runs_14d: r.runs_14d, last_run: r.last_run,
+      endless_best: r.endless_best ?? 0,
+      lorekin, top_lorekin_level: topLorekin,
+      home, furniture: placed,
+    };
+  });
+  const levels = students.map((s) => s.level).filter((l): l is number => l !== null).sort((a, b) => a - b);
+  const median = levels.length ? levels[Math.floor(levels.length / 2)] : null;
+  return { boss_order: BOSS_ORDER, students, median_level: median };
+}

@@ -285,6 +285,7 @@
       <button data-tab="students">Students</button>
       <button data-tab="learning">Learning</button>
       <button data-tab="activity">Activity</button>
+      <button data-tab="game">Game</button>
       <button data-tab="assign">Assign</button>
       <button data-tab="onboarding">Onboarding</button>
     </div>
@@ -342,6 +343,22 @@
     <div id="activity-days" class="weekly"></div>
     <h3>Where the time goes</h3>
     <p id="activity-areas" class="hint"></p>
+  </div>
+
+  <div class="card tabpane hidden" id="tab-game">
+    <div class="tiles" id="game-tiles"></div>
+    <h3>Where the class is</h3>
+    <p class="hint">Each dungeon needs the previous biome's boss, so a student's stage is the first boss they have not beaten yet.</p>
+    <div id="game-stages"></div>
+    <h3>Students</h3>
+    <p class="hint">Click a column to sort. Bosses are kills per biome: Desert, Swamp, Ice, Lava.</p>
+    <div style="overflow-x:auto"><table class="stats" id="game-table">
+      <thead><tr>
+        <th data-sort="username">Student</th><th data-sort="level">Level</th><th data-sort="rank">Stage</th><th data-sort="boss_kills_total">Bosses</th>
+        <th data-sort="runs_14d">Dungeon runs</th><th data-sort="endless_best">Endless</th><th data-sort="lorekin">Lorekin</th><th data-sort="furniture">Home</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
   </div>
 
   <div class="card tabpane hidden" id="tab-assign">
@@ -737,11 +754,12 @@ function renderWeekly(el, weeks) {
 async function openClass(id, tab) {
   currentClassId = id;
   if (tab) currentClassTab = tab;
-  const [data, ins, an, act] = await Promise.all([
+  const [data, ins, an, act, prog] = await Promise.all([
     api("GET", "/api/teacher/classes/" + id),
     api("GET", `/api/teacher/classes/${id}/insights`),
     api("GET", `/api/teacher/classes/${id}/analytics`),
     api("GET", `/api/teacher/classes/${id}/activity`),
+    api("GET", `/api/teacher/classes/${id}/progress`),
   ]);
   insightsCache = ins;
   document.getElementById("class-detail-name").textContent = data.class.name;
@@ -751,6 +769,8 @@ async function openClass(id, tab) {
   renderStudentsTable();
   renderLearning(ins, an);
   renderActivity(act);
+  progressCache = prog;
+  renderGame();
   loadTraining(id);
 
   const assignedEl = document.getElementById("class-assigned");
@@ -891,6 +911,78 @@ function renderLearning(ins, an) {
     qb.appendChild(tr);
   });
 }
+
+// ---- Game tab (Milestone 305) ----
+let progressCache = null;
+let gameSort = { key: "level", dir: 1 };
+const STAGE_NAMES = ["Forest", "Working on Swamp", "Working on Ice", "Working on Lava", "All four bosses beaten", "Endless Dungeon"];
+
+// 0 = no boss yet ... 4 = all four beaten, 5 = in the Endless Dungeon (a boss is only reachable after the one before it)
+function stageRank(s) {
+  let r = 0;
+  for (const k of s.boss_kills) { if (k > 0) r += 1; else break; }
+  return r === 4 && s.endless_best > 0 ? 5 : r;
+}
+
+function renderGame() {
+  if (!progressCache) return;
+  const list = progressCache.students.map(s => Object.assign({ rank: stageRank(s) }, s));
+  const n = list.length;
+  const past = list.filter(s => s.rank >= 1).length;
+  const tiles = [
+    [progressCache.median_level === null ? "—" : progressCache.median_level, "median level"],
+    [past + " / " + n, "have beaten a boss"],
+    [list.filter(s => s.rank >= 4).length, "beat all four bosses"],
+    [list.reduce((a, s) => a + s.lorekin, 0), "Lorekin hatched"],
+  ];
+  document.getElementById("game-tiles").innerHTML = tiles.map(t => `<div class="tile"><div class="num">${t[0]}</div><div class="lbl">${t[1]}</div></div>`).join("");
+
+  const st = document.getElementById("game-stages");
+  st.innerHTML = "";
+  if (n === 0) st.innerHTML = "<em>No students yet.</em>";
+  const counts = STAGE_NAMES.map((_, i) => list.filter(s => s.rank === i).length);
+  const peak = Math.max(1, ...counts);
+  STAGE_NAMES.forEach((name, i) => {
+    if (n === 0) return;
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `<div style="min-width:190px">${name}</div><div style="flex:1"><span class="bar" style="width:100%; max-width:320px"><span style="width:${Math.round(100 * counts[i] / peak)}%; background:var(--accent)"></span></span></div><div style="width:40px; text-align:right">${counts[i]}</div>`;
+    st.appendChild(row);
+  });
+
+  const body = document.querySelector("#game-table tbody");
+  body.innerHTML = "";
+  const k = gameSort.key, dir = gameSort.dir;
+  list.sort((a, b) => {
+    const av = a[k], bv = b[k];
+    if (k === "username") return dir * String(av).localeCompare(String(bv));
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    return dir * (av - bv) || a.username.localeCompare(b.username);
+  });
+  if (n === 0) body.innerHTML = "<tr><td colspan='8'><em>No students yet.</em></td></tr>";
+  list.forEach(s => {
+    const tr = document.createElement("tr");
+    const bosses = s.boss_kills.map((c, i) => `<span class="chip ${c > 0 ? "watch" : ""}" style="${c > 0 ? "" : "background:var(--panel-2); color:var(--muted)"}" title="${["Desert", "Swamp", "Ice", "Lava"][i]}: ${c} kill${c === 1 ? "" : "s"}">${["D", "S", "I", "L"][i]}${c > 0 ? " " + c : ""}</span>`).join(" ");
+    tr.innerHTML = `<td><a class="link">${escapeHtml(s.username)}</a></td><td>${s.level === null ? "—" : s.level}</td><td>${STAGE_NAMES[s.rank]}</td><td>${bosses}</td>
+      <td>${s.runs_14d} <span class="meta">(${s.runs_total} total)</span></td><td>${s.endless_best > 0 ? s.endless_best : "—"}</td>
+      <td>${s.lorekin > 0 ? s.lorekin + " <span class='meta'>(top Lv " + s.top_lorekin_level + ")</span>" : "—"}</td><td>${escapeHtml(s.home)} <span class="meta">(${s.furniture} pieces)</span></td>`;
+    tr.querySelector("a").onclick = () => openStudent(currentClassId, s.student_id, "game");
+    body.appendChild(tr);
+  });
+  document.querySelectorAll("#game-table th").forEach(th => {
+    const base = th.textContent.replace(/ [▲▼]$/, "");
+    th.textContent = base + (th.dataset.sort === k ? (dir > 0 ? " ▲" : " ▼") : "");
+  });
+}
+document.querySelectorAll("#game-table th").forEach(th => {
+  th.style.cursor = "pointer";
+  th.onclick = () => {
+    const k = th.dataset.sort;
+    gameSort = gameSort.key === k ? { key: k, dir: -gameSort.dir } : { key: k, dir: k === "username" ? 1 : -1 };
+    renderGame();
+  };
+});
 
 // ---- Activity tab (Milestone 304) ----
 function renderActivity(act) {

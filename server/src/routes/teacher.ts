@@ -8,7 +8,7 @@ import { parseCsv } from "../csv";
 import { isUsernameAllowed } from "../usernameFilter";
 import { sendPasswordResetEmail } from "../email";
 import { parseTutorial } from "../tutorial";
-import { classInsights, studentInsights, classActivity } from "../insights";
+import { classInsights, studentInsights, classActivity, classProgress } from "../insights";
 
 const router = Router();
 
@@ -259,6 +259,14 @@ router.get("/classes/:id/activity", ah(async (req: AuthedRequest, res) => {
   const cls = await dbGet("SELECT id FROM classes WHERE id = ? AND teacher_id = ?", [classId, req.userId!]);
   if (!cls) return res.status(404).json({ error: "Class not found" });
   res.json(await classActivity(classId));
+}));
+
+// Milestone 305: the Game progress tab
+router.get("/classes/:id/progress", ah(async (req: AuthedRequest, res) => {
+  const classId = Number(req.params.id);
+  const cls = await dbGet("SELECT id FROM classes WHERE id = ? AND teacher_id = ?", [classId, req.userId!]);
+  if (!cls) return res.status(404).json({ error: "Class not found" });
+  res.json(await classProgress(classId));
 }));
 
 // One student's own breakdown, by question set and by individual question
