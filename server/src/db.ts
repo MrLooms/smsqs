@@ -287,6 +287,9 @@ export async function initDb() {
   // Milestone 311: overworld discovery progress (wisps found, milestones paid) - see discovery.ts
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS discovery_json TEXT NOT NULL DEFAULT '{}'");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_x INTEGER");
+  // Milestone 345: the cosmetics (LPC accessories) this account owns - a JSON array of cosmetic ids. What is WORN lives in appearance_json (appearance.cos).
+  // Nothing grants them yet (no shop / event claims); the test accounts own everything client-side.
+  await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS cosmetics_json TEXT NOT NULL DEFAULT '[]'");
   await pool.query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS world_y INTEGER");
   // Milestone 185: LPC character customization (phase 2) - which variant of each layer
   // (skin/hair/torso/legs/feet) this character draws. Same opaque-JSON-blob pattern as

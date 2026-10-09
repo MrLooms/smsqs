@@ -55,6 +55,7 @@ export interface CharacterState {
   world_x: number | null;
   world_y: number | null;
   appearance: Appearance;
+  cosmetics?: string[]; // Milestone 345: owned cosmetic ids, read-only here (nothing grants them yet)
   // Milestone 256: read-only here - Lorekin state is changed through /api/lorekin/*, never the PUT.
   lorekin?: unknown;
   house?: unknown; // Milestone 262: read-only here too - changed through /api/house/*

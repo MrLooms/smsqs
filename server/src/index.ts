@@ -74,6 +74,7 @@ async function loadCharacter(userId: number): Promise<CharacterState> {
     world_x: row.world_x ?? null,
     world_y: row.world_y ?? null,
     appearance: row.appearance_json ? JSON.parse(row.appearance_json) : DEFAULT_APPEARANCE,
+    cosmetics: row.cosmetics_json ? (JSON.parse(row.cosmetics_json) as string[]) : [],
     lorekin: lorekinToClient(lk),
     house: houseToClient(hs.state),
     tutorial: tutorialToClient(parseTutorial(row.tutorial_json)),
