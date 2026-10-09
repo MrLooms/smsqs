@@ -705,29 +705,37 @@ router.get("/house/of/:username", requireAuth, requireRole("student"), ah(async 
   );
   if (!owner) return res.json({ ok: false, error: "No such player" });
   if (!(await houseAccess(req.userId!, owner.id))) return res.json({ ok: false, error: "You can only see the homes of players in your party" });
-  const c = await dbGet<{ house_json: string; level: number; inventory_json: string; lorekin_json: string }>(
-    "SELECT house_json, level, inventory_json, lorekin_json FROM characters WHERE user_id = ?",
+  const c = await dbGet<{ house_json: string; level: number; inventory_json: string; lorekin_json: string; discovery_json: string }>(
+    "SELECT house_json, level, inventory_json, lorekin_json, discovery_json FROM characters WHERE user_id = ?",
     [owner.id]
   );
   if (!c) return res.json({ ok: false, error: "No such player" });
   const state = parseHouse(c.house_json, isTestName(owner.username)).state;
   let bossKills: Record<string, number> = {};
   let tier = 0;
+  // Milestone 332: lifetime tallies the game keeps on the Conqueror's Badge (monsters, gold earned, quests, towers, champions)
+  const tally: Record<string, number> = { kills: 0, gold: 0, quests: 0, towers: 0, champions: 0 };
   try {
     const inv = JSON.parse(c.inventory_json);
     const badge = Array.isArray(inv) ? inv.find((i: any) => i && i.badge) : undefined;
     if (badge) {
       bossKills = badge.boss_kills && typeof badge.boss_kills === "object" ? badge.boss_kills : {};
       tier = Number.isInteger(badge.max_unlocked_tier) ? badge.max_unlocked_tier : 0;
+      if (badge.tally && typeof badge.tally === "object") for (const k of Object.keys(tally)) tally[k] = Math.max(0, Math.floor(Number(badge.tally[k]) || 0));
     }
   } catch { /* leave the defaults */ }
+  const att = await dbGet<{ n: number; ok: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(correct), 0) AS ok FROM question_attempts WHERE student_id = ?", [owner.id]);
+  const wisps = parseDiscovery(c.discovery_json).lifetime;
   let lorekinCount = 0;
   try { lorekinCount = (JSON.parse(c.lorekin_json).list ?? []).length; } catch { /* 0 */ }
   res.json({
     ok: true,
     owner: owner.username,
     house: houseToClient(state),
-    stats: { level: c.level, tier, boss_kills: bossKills, endless_best: owner.endless_best ?? 0, lorekin: lorekinCount },
+    stats: {
+      level: c.level, tier, boss_kills: bossKills, endless_best: owner.endless_best ?? 0, lorekin: lorekinCount,
+      questions: Number(att?.n ?? 0), questions_correct: Number(att?.ok ?? 0), wisps, tally,
+    },
   });
 }));
 
