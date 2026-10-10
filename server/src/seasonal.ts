@@ -14,7 +14,6 @@ const TZ = "America/Vancouver";
 const START_MS = Date.parse("2026-10-25T00:00:00-07:00");
 const END_MS = Date.parse("2026-10-31T23:59:59-07:00") + 999;
 const BAG_GOLD = 150;          // the Treat Bag's prize once the whole pool is owned
-const DAILY_DROP_CAP = 400;    // candy that can come from enemy drops per day (the quests' own candy is on top)
 
 // ---------------------------------------------------------------- the quests (3 a day: one from each group, picked by the day)
 interface QuestDef { id: string; title: string; desc: string; kind: string; target: number; candy: number; }
@@ -33,7 +32,7 @@ const GROUP_C: QuestDef[] = [
 ];
 const KINDS = ["kills", "champions", "towers", "wisps", "questions"];
 // the most one batch of progress may add (the game sends them every few seconds)
-const CAPS: Record<string, number> = { kills: 80, champions: 10, towers: 3, wisps: 5, questions: 40, candy: 150 };
+const CAPS: Record<string, number> = { kills: 80, champions: 10, towers: 3, wisps: 5, questions: 40, candy: 250 };
 
 // ---------------------------------------------------------------- the prizes
 export interface Prize { id: string; weight: number; price: number; tier: "ultra" | "rare" | "common" | "pick"; }
@@ -198,8 +197,7 @@ export async function seasonProgress(userId: number, forced: boolean, deltas: Re
     const n = Math.max(0, Math.min(CAPS[k], Math.floor(Number(deltas?.[k]) || 0)));
     if (n > 0) ds.prog[k] = (ds.prog[k] ?? 0) + n;
   }
-  let candy = Math.max(0, Math.min(CAPS.candy, Math.floor(Number(deltas?.candy) || 0)));
-  candy = Math.min(candy, Math.max(0, DAILY_DROP_CAP - ds.drop));
+  const candy = Math.max(0, Math.min(CAPS.candy, Math.floor(Number(deltas?.candy) || 0)));
   ds.drop += candy;
   st.candy += candy;
   // a quest that just reached its target pays its candy (once)
