@@ -1,4 +1,4 @@
-// Milestone 347: SEASONAL EVENTS - the Halloween "Haunted Hollow" event (Oct 25 - Oct 31, 2026, Vancouver time).
+// Milestone 347: SEASONAL EVENTS - the Halloween "Haunted Hollow" event (Oct 21 - Oct 31, 2026, Vancouver time).
 // A temporary NPC in the hub (Madam Hex) gives 3 spooky daily quests; finishing ANY one pays one random Treat Bag a day (a cosmetic prize, never one the
 // student already owns while there are others left, gold when the whole pool is owned). Enemies also drop Candy, which buys a CHOSEN piece at fixed prices.
 // The game reports progress in batches (counters, never "I finished"); the server keeps the day's counters, the candy balance and what was claimed, and is
@@ -11,7 +11,7 @@ import { HOUSE_ITEM_IDS } from "./houseCatalog";
 export const SEASON_ID = "halloween_2026";
 export const SEASON_NAME = "Haunted Hollow";
 const TZ = "America/Vancouver";
-const START_MS = Date.parse("2026-10-25T00:00:00-07:00");
+const START_MS = Date.parse("2026-10-21T00:00:00-07:00");
 const END_MS = Date.parse("2026-10-31T23:59:59-07:00") + 999;
 const BAG_GOLD = 150;          // the Treat Bag's prize once the whole pool is owned
 
