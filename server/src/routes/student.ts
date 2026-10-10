@@ -5,6 +5,7 @@ import { isTestName } from "../testAccount";
 import { HouseState, parseHouse, cleanPlaced, cleanChest, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM, isFreeItem } from "../house";
 import { HOUSE_ITEM_IDS } from "../houseCatalog";
 import { COSMETIC_SALE } from "../cosmeticCatalog";
+import { seasonGet, seasonProgress, seasonBag, seasonBuy } from "../seasonal";
 import { inSameParty } from "../party";
 import { parseTutorial, tutorialToClient, isTutId, isStepId, CHECKLIST_ITEMS } from "../tutorial";
 import { EVENT_KINDS, cleanDetail } from "../events";
@@ -664,6 +665,24 @@ router.post("/cosmetics/buy", requireAuth, requireRole("student"), ah(async (req
   owned.push(id);
   await dbRun("UPDATE characters SET cosmetics_json = ? WHERE user_id = ?", [JSON.stringify(owned), req.userId!]);
   res.json({ ok: true, cosmetics: owned });
+}));
+
+// Milestone 347: the seasonal (Halloween) event - see seasonal.ts. The test accounts always see it active.
+async function isSeasonForced(userId: number): Promise<boolean> {
+  const u = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [userId]);
+  return !!u && isTestName(u.username);
+}
+router.get("/season", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  res.json(await seasonGet(req.userId!, await isSeasonForced(req.userId!)));
+}));
+router.post("/season/progress", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  res.json(await seasonProgress(req.userId!, await isSeasonForced(req.userId!), (req.body?.deltas ?? {}) as Record<string, unknown>));
+}));
+router.post("/season/bag", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  res.json(await seasonBag(req.userId!, await isSeasonForced(req.userId!)));
+}));
+router.post("/season/buy", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  res.json(await seasonBuy(req.userId!, await isSeasonForced(req.userId!), String(req.body?.id ?? "")));
 }));
 
 router.post("/house/wall", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {

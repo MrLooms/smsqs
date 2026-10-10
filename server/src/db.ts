@@ -257,6 +257,15 @@ export async function initDb() {
     await pool.query("ALTER TABLE characters ADD COLUMN tutorial_json TEXT");
     await pool.query(`UPDATE characters SET tutorial_json = '{"done":{"basic":1},"skipped":{},"step":{}}'`); // done time 1 = "already playing before tutorials existed"
   }
+  // Milestone 347: seasonal events (the Halloween event) - one row per student per event, an opaque JSON blob (candy, the day's counters, claims) - see seasonal.ts
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS season_state (
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      event_id TEXT NOT NULL,
+      state_json TEXT NOT NULL DEFAULT '{}',
+      PRIMARY KEY (user_id, event_id)
+    );
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tutorial_events (
       id SERIAL PRIMARY KEY,
