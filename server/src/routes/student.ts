@@ -4,6 +4,7 @@ import { isUsernameAllowed } from "../usernameFilter";
 import { isTestName } from "../testAccount";
 import { HouseState, parseHouse, cleanPlaced, cleanChest, houseToClient, FLOORS, WALLS, TIERS, MAX_OWNED_PER_ITEM, isFreeItem } from "../house";
 import { HOUSE_ITEM_IDS } from "../houseCatalog";
+import { COSMETIC_SALE } from "../cosmeticCatalog";
 import { inSameParty } from "../party";
 import { parseTutorial, tutorialToClient, isTutId, isStepId, CHECKLIST_ITEMS } from "../tutorial";
 import { EVENT_KINDS, cleanDetail } from "../events";
@@ -649,6 +650,20 @@ router.post("/house/buy", requireAuth, requireRole("student"), ah(async (req: Au
   });
   if (out.error) return res.json({ ok: false, error: out.error, house: out.state });
   res.json({ ok: true, house: out.state });
+}));
+
+// Milestone 346: records a purchase from the Stylist: the cosmetic id joins the account's owned list. The game checks and spends the gold
+// itself (gold is client-side, like the Carpenter's), calling this FIRST and spending only if it succeeds. Only pieces that are for sale can be bought.
+router.post("/cosmetics/buy", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
+  const id = String(req.body?.id ?? "");
+  const row = await dbGet<{ cosmetics_json: string | null }>("SELECT cosmetics_json FROM characters WHERE user_id = ?", [req.userId!]);
+  let owned: string[] = [];
+  try { owned = row?.cosmetics_json ? (JSON.parse(row.cosmetics_json) as string[]) : []; } catch { owned = []; }
+  if (!Object.prototype.hasOwnProperty.call(COSMETIC_SALE, id)) return res.json({ ok: false, error: "That is not for sale", cosmetics: owned });
+  if (owned.includes(id)) return res.json({ ok: false, error: "You already own that", cosmetics: owned });
+  owned.push(id);
+  await dbRun("UPDATE characters SET cosmetics_json = ? WHERE user_id = ?", [JSON.stringify(owned), req.userId!]);
+  res.json({ ok: true, cosmetics: owned });
 }));
 
 router.post("/house/wall", requireAuth, requireRole("student"), ah(async (req: AuthedRequest, res) => {
