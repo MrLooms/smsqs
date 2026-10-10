@@ -3,8 +3,10 @@
 // student already owns while there are others left, gold when the whole pool is owned). Enemies also drop Candy, which buys a CHOSEN piece at fixed prices.
 // The game reports progress in batches (counters, never "I finished"); the server keeps the day's counters, the candy balance and what was claimed, and is
 // the only place that adds a cosmetic to the account. The test accounts see the event active at any time (so it can be tried before the 25th).
-import { dbGet, dbRun } from "./db";
+import { dbGet, dbRun, withTransaction } from "./db";
 import { COSMETIC_IDS } from "./cosmeticCatalog";
+import { parseHouse, MAX_OWNED_PER_ITEM } from "./house";
+import { HOUSE_ITEM_IDS } from "./houseCatalog";
 
 export const SEASON_ID = "halloween_2026";
 export const SEASON_NAME = "Haunted Hollow";
@@ -53,6 +55,42 @@ function buildPool(): Prize[] {
 }
 const POOL: Prize[] = buildPool();
 const POOL_BY_ID = new Map(POOL.map((p) => [p.id, p]));
+
+// The graveyard furniture (the Carpenter's "Graveyard" style, event-only now): bought for candy, delivered to the student's HOME (house_json.owned) -
+// any number of each. The ids are home-catalog group ids (scripts/scr_house_catalog.gml). The fence pillar, grave plot, weeds, dead tree and iron
+// fence are not sold.
+const FURNITURE: Record<string, number> = {
+  ff_gra_34: 350,  // Angel Statue
+  ff_gra_36: 300,  // Coffin
+  ff_gra_23: 150,  // Tombstone
+  ff_gra_16: 120,  // Cross
+  ff_gra_41: 100,  // Grave Marker
+  ff_gra_56: 100,  // Lantern
+  ff_gra_59: 100,  // Zombie Hand
+  ff_gra_46: 80,   // Urn
+  ff_gra_67: 60,   // Candle
+  ff_gra_73: 60,   // Bones
+  ff_gra_97: 60,   // Flower Bouquet
+  ff_gra_54: 60,   // Shovel
+};
+const HOUSE_IDS = new Set(HOUSE_ITEM_IDS);
+
+async function houseOwnedCounts(userId: number, forced: boolean): Promise<Record<string, number>> {
+  const row = await dbGet<{ house_json: string | null }>("SELECT house_json FROM characters WHERE user_id = ?", [userId]);
+  try { return parseHouse(row?.house_json ?? null, forced).state.owned ?? {}; } catch { return {}; }
+}
+
+// +1 of a furniture piece in the student's home (locked read-modify-write like the Carpenter's route)
+async function grantFurniture(userId: number, id: string, forced: boolean): Promise<string | null> {
+  return withTransaction(async (query) => {
+    const r = await query("SELECT house_json FROM characters WHERE user_id = ? FOR UPDATE", [userId]);
+    const { state } = parseHouse(r.rows[0]?.house_json, forced);
+    if ((state.owned[id] ?? 0) >= MAX_OWNED_PER_ITEM) return "You already own plenty of those";
+    state.owned[id] = (state.owned[id] ?? 0) + 1;
+    await query("UPDATE characters SET house_json = ? WHERE user_id = ?", [JSON.stringify(state), userId]);
+    return null;
+  });
+}
 
 // ---------------------------------------------------------------- state
 interface DayState { prog: Record<string, number>; done: Record<string, boolean>; bag: boolean; drop: number; }
@@ -118,6 +156,7 @@ async function payload(userId: number, st: SeasonState, owned: string[], forced:
   if (!isSeasonActive(nowMs, forced)) return { ok: true, active: false, ...extra };
   const day = dayKey(nowMs);
   const ds = st.days[day] ?? emptyDay();
+  const homeOwned = await houseOwnedCounts(userId, forced);
   const qs = questsFor(day).map((q) => ({
     id: q.id, title: q.title, desc: q.desc, target: q.target, candy: q.candy,
     progress: Math.min(q.target, ds.prog[q.kind] ?? 0), done: !!ds.done[q.id],
@@ -130,7 +169,10 @@ async function payload(userId: number, st: SeasonState, owned: string[], forced:
     day, quests: qs,
     bag_ready: anyDone && !ds.bag, bag_claimed: ds.bag,
     candy: st.candy,
-    shop: POOL.map((p) => ({ id: p.id, price: p.price, tier: p.tier, owned: owned.includes(p.id) })),
+    shop: [
+      ...POOL.map((p) => ({ id: p.id, price: p.price, tier: p.tier, kind: "cosmetic", owned: owned.includes(p.id), own: owned.includes(p.id) ? 1 : 0 })),
+      ...Object.keys(FURNITURE).filter((id) => HOUSE_IDS.has(id)).map((id) => ({ id, price: FURNITURE[id], tier: "furniture", kind: "furniture", owned: false, own: homeOwned[id] ?? 0 })),
+    ],
     cosmetics: owned,
     ...extra,
   };
@@ -208,6 +250,15 @@ export async function seasonBuy(userId: number, forced: boolean, id: string) {
   let owned = await loadOwned(userId);
   const fail = async (error: string) => ({ ...(await payload(userId, st, owned, forced, now)), ok: false, error });
   if (!isSeasonActive(now, forced)) return fail("The event is not on");
+  if (Object.prototype.hasOwnProperty.call(FURNITURE, id) && HOUSE_IDS.has(id)) {
+    const price = FURNITURE[id];
+    if (st.candy < price) return fail("Not enough candy");
+    const err = await grantFurniture(userId, id, forced);
+    if (err) return fail(err);
+    st.candy -= price;
+    await saveState(userId, st);
+    return payload(userId, st, owned, forced, now, { bought: id });
+  }
   const p = POOL_BY_ID.get(id);
   if (!p) return fail("That is not for sale");
   if (owned.includes(id)) return fail("You already own that");
