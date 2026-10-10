@@ -35,44 +35,42 @@ const KINDS = ["kills", "champions", "towers", "wisps", "questions"];
 const CAPS: Record<string, number> = { kills: 80, champions: 10, towers: 3, wisps: 5, questions: 40, candy: 250 };
 
 // ---------------------------------------------------------------- the prizes
-export interface Prize { id: string; weight: number; price: number; tier: "ultra" | "rare" | "common" | "pick"; }
+export interface Prize { id: string; weight: number; price: number; tier: "legendary" | "epic" | "rare" | "common"; kind: "cosmetic" | "furniture"; }
+// Tiers: one price (candy) and one bag weight each - furniture costs what a costume of the same tier costs.
+const TIER_INFO: Record<Prize["tier"], { weight: number; price: number }> = {
+  legendary: { weight: 2, price: 1200 },
+  epic: { weight: 8, price: 400 },
+  rare: { weight: 3, price: 200 },
+  common: { weight: 4, price: 120 },
+};
 function buildPool(): Prize[] {
   const have = new Set(COSMETIC_IDS);
+  const homeIds = new Set(HOUSE_ITEM_IDS);
   const out: Prize[] = [];
   const seen = new Set<string>();
-  const add = (id: string, weight: number, price: number, tier: Prize["tier"]) => {
-    if (!have.has(id) || seen.has(id)) return;
+  const add = (id: string, tier: Prize["tier"], kind: Prize["kind"]) => {
+    if (seen.has(id)) return;
+    if (kind === "cosmetic" ? !have.has(id) : !homeIds.has(id)) return;
     seen.add(id);
-    out.push({ id, weight, price, tier });
+    out.push({ id, tier, kind, weight: TIER_INFO[tier].weight, price: TIER_INFO[tier].price });
   };
-  add("wings_wings_bat", 2, 1200, "ultra");
-  for (const id of ["mask_heads_jack", "mask_heads_skeleton", "mask_heads_zombie", "mask_heads_vampire", "mask_heads_frankenstein", "mask_heads_wartotaur", "wings_wings_lizard_alt"]) add(id, 8, 400, "rare");
-  for (const id of COSMETIC_IDS) if (id.startsWith("mask_")) add(id, 3, 200, "common");   // the other creature heads
-  for (const id of COSMETIC_IDS) if (id.startsWith("horns_")) add(id, 4, 120, "pick");
-  for (const id of ["ears_ears_cat", "ears_ears_wolf", "hat_cloth_hood_sack", "hat_formal_tophat", "tail_tail_lizard_alt"]) add(id, 4, 120, "pick");
+  // LEGENDARY: Bat Wings, the Angel Statue and the Coffin
+  add("wings_wings_bat", "legendary", "cosmetic");
+  for (const id of ["ff_gra_34", "ff_gra_36"]) add(id, "legendary", "furniture");
+  // EPIC: the six Halloween heads, Lizard Wings, the Tombstone and the Cross
+  for (const id of ["mask_heads_jack", "mask_heads_skeleton", "mask_heads_zombie", "mask_heads_vampire", "mask_heads_frankenstein", "mask_heads_wartotaur", "wings_wings_lizard_alt"]) add(id, "epic", "cosmetic");
+  for (const id of ["ff_gra_23", "ff_gra_16"]) add(id, "epic", "furniture");
+  // RARE: the other creature heads
+  for (const id of COSMETIC_IDS) if (id.startsWith("mask_")) add(id, "rare", "cosmetic");
+  // COMMON: everything else - horns, ears, a hood, a top hat, a tail; and the small graveyard furniture
+  for (const id of COSMETIC_IDS) if (id.startsWith("horns_")) add(id, "common", "cosmetic");
+  for (const id of ["ears_ears_cat", "ears_ears_wolf", "hat_cloth_hood_sack", "hat_formal_tophat", "tail_tail_lizard_alt"]) add(id, "common", "cosmetic");
+  // (the fence pillar, grave plot, weeds, dead tree and iron fence are not part of the event)
+  for (const id of ["ff_gra_41", "ff_gra_56", "ff_gra_59", "ff_gra_46", "ff_gra_67", "ff_gra_73", "ff_gra_97", "ff_gra_54"]) add(id, "common", "furniture");
   return out;
 }
 const POOL: Prize[] = buildPool();
 const POOL_BY_ID = new Map(POOL.map((p) => [p.id, p]));
-
-// The graveyard furniture (the Carpenter's "Graveyard" style, event-only now): bought for candy, delivered to the student's HOME (house_json.owned) -
-// any number of each. The ids are home-catalog group ids (scripts/scr_house_catalog.gml). The fence pillar, grave plot, weeds, dead tree and iron
-// fence are not sold.
-const FURNITURE: Record<string, number> = {
-  ff_gra_34: 350,  // Angel Statue
-  ff_gra_36: 300,  // Coffin
-  ff_gra_23: 150,  // Tombstone
-  ff_gra_16: 120,  // Cross
-  ff_gra_41: 100,  // Grave Marker
-  ff_gra_56: 100,  // Lantern
-  ff_gra_59: 100,  // Zombie Hand
-  ff_gra_46: 80,   // Urn
-  ff_gra_67: 60,   // Candle
-  ff_gra_73: 60,   // Bones
-  ff_gra_97: 60,   // Flower Bouquet
-  ff_gra_54: 60,   // Shovel
-};
-const HOUSE_IDS = new Set(HOUSE_ITEM_IDS);
 
 async function houseOwnedCounts(userId: number, forced: boolean): Promise<Record<string, number>> {
   const row = await dbGet<{ house_json: string | null }>("SELECT house_json FROM characters WHERE user_id = ?", [userId]);
@@ -168,10 +166,9 @@ async function payload(userId: number, st: SeasonState, owned: string[], forced:
     day, quests: qs,
     bag_ready: anyDone && !ds.bag, bag_claimed: ds.bag,
     candy: st.candy,
-    shop: [
-      ...POOL.map((p) => ({ id: p.id, price: p.price, tier: p.tier, kind: "cosmetic", owned: owned.includes(p.id), own: owned.includes(p.id) ? 1 : 0 })),
-      ...Object.keys(FURNITURE).filter((id) => HOUSE_IDS.has(id)).map((id) => ({ id, price: FURNITURE[id], tier: "furniture", kind: "furniture", owned: false, own: homeOwned[id] ?? 0 })),
-    ],
+    shop: POOL.map((p) => (p.kind === "furniture"
+      ? { id: p.id, price: p.price, tier: p.tier, kind: "furniture", owned: false, own: homeOwned[p.id] ?? 0 }
+      : { id: p.id, price: p.price, tier: p.tier, kind: "cosmetic", owned: owned.includes(p.id), own: owned.includes(p.id) ? 1 : 0 })),
     cosmetics: owned,
     ...extra,
   };
@@ -221,9 +218,9 @@ export async function seasonBag(userId: number, forced: boolean) {
   const ds = st.days[day] ?? (st.days[day] = emptyDay());
   if (ds.bag) return { ...(await payload(userId, st, owned, forced, now)), ok: false, error: "You already opened today's bag - come back tomorrow" };
   if (!Object.values(ds.done).some(Boolean)) return { ...(await payload(userId, st, owned, forced, now)), ok: false, error: "Finish one of today's quests first" };
-  // a weighted pick among the pieces not owned yet; gold once everything is
-  const left = POOL.filter((p) => !owned.includes(p.id));
-  let prize: { id?: string; gold?: number };
+  // a weighted pick among the cosmetics not owned yet and the furniture (which can come again and again); gold only if nothing is left / the home is full
+  const left = POOL.filter((p) => p.kind === "furniture" || !owned.includes(p.id));
+  let prize: { id?: string; kind?: string; gold?: number };
   if (left.length === 0) {
     prize = { gold: BAG_GOLD };
   } else {
@@ -232,8 +229,13 @@ export async function seasonBag(userId: number, forced: boolean) {
     let r = Math.random() * total;
     let pick = left[left.length - 1];
     for (const p of left) { r -= p.weight; if (r <= 0) { pick = p; break; } }
-    owned = await addCosmetic(userId, owned, pick.id);
-    prize = { id: pick.id };
+    if (pick.kind === "furniture") {
+      const err = await grantFurniture(userId, pick.id, forced);
+      prize = err ? { gold: BAG_GOLD } : { id: pick.id, kind: "furniture" };
+    } else {
+      owned = await addCosmetic(userId, owned, pick.id);
+      prize = { id: pick.id, kind: "cosmetic" };
+    }
   }
   ds.bag = true;
   st.bags += 1;
@@ -248,21 +250,17 @@ export async function seasonBuy(userId: number, forced: boolean, id: string) {
   let owned = await loadOwned(userId);
   const fail = async (error: string) => ({ ...(await payload(userId, st, owned, forced, now)), ok: false, error });
   if (!isSeasonActive(now, forced)) return fail("The event is not on");
-  if (Object.prototype.hasOwnProperty.call(FURNITURE, id) && HOUSE_IDS.has(id)) {
-    const price = FURNITURE[id];
-    if (st.candy < price) return fail("Not enough candy");
-    const err = await grantFurniture(userId, id, forced);
-    if (err) return fail(err);
-    st.candy -= price;
-    await saveState(userId, st);
-    return payload(userId, st, owned, forced, now, { bought: id });
-  }
   const p = POOL_BY_ID.get(id);
   if (!p) return fail("That is not for sale");
-  if (owned.includes(id)) return fail("You already own that");
   if (st.candy < p.price) return fail("Not enough candy");
+  if (p.kind === "furniture") {
+    const err = await grantFurniture(userId, id, forced);
+    if (err) return fail(err);
+  } else {
+    if (owned.includes(id)) return fail("You already own that");
+    owned = await addCosmetic(userId, owned, id);
+  }
   st.candy -= p.price;
-  owned = await addCosmetic(userId, owned, id);
   await saveState(userId, st);
   return payload(userId, st, owned, forced, now, { bought: id });
 }
