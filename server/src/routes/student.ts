@@ -668,7 +668,10 @@ router.post("/cosmetics/buy", requireAuth, requireRole("student"), ah(async (req
 }));
 
 // Milestone 347: the seasonal (Halloween) event - see seasonal.ts. The test accounts always see it active.
+// Flip SEASON_TEST_FORCE to true to make the event run for the test accounts at any time (testing); false = it follows the real dates for everyone.
+const SEASON_TEST_FORCE = false;
 async function isSeasonForced(userId: number): Promise<boolean> {
+  if (!SEASON_TEST_FORCE) return false;
   const u = await dbGet<{ username: string }>("SELECT username FROM users WHERE id = ?", [userId]);
   return !!u && isTestName(u.username);
 }
