@@ -36,12 +36,14 @@ const CAPS: Record<string, number> = { kills: 80, champions: 10, towers: 3, wisp
 
 // ---------------------------------------------------------------- the prizes
 export interface Prize { id: string; weight: number; price: number; tier: "legendary" | "epic" | "rare" | "common"; kind: "cosmetic" | "furniture"; }
-// Tiers: one price (candy) and one bag weight each - furniture costs what a costume of the same tier costs.
-const TIER_INFO: Record<Prize["tier"], { weight: number; price: number }> = {
-  legendary: { weight: 2, price: 1200 },
-  epic: { weight: 8, price: 400 },
-  rare: { weight: 3, price: 200 },
-  common: { weight: 4, price: 120 },
+// Tiers: one price (candy) each - furniture costs what a costume of the same tier costs - and a SHARE of the bag: of every 100 bags (while nothing is owned
+// yet) about 3 give a legendary piece, 12 an epic, 25 a rare and 60 a common. The share is split evenly over the tier's pieces, so a tier with more pieces
+// gives each one a smaller weight. (As a student owns cosmetics those leave their tier's pool and the odds shift to what is left.)
+const TIER_INFO: Record<Prize["tier"], { share: number; price: number }> = {
+  legendary: { share: 3, price: 1200 },
+  epic: { share: 12, price: 400 },
+  rare: { share: 25, price: 200 },
+  common: { share: 60, price: 120 },
 };
 function buildPool(): Prize[] {
   const have = new Set(COSMETIC_IDS);
@@ -52,7 +54,7 @@ function buildPool(): Prize[] {
     if (seen.has(id)) return;
     if (kind === "cosmetic" ? !have.has(id) : !homeIds.has(id)) return;
     seen.add(id);
-    out.push({ id, tier, kind, weight: TIER_INFO[tier].weight, price: TIER_INFO[tier].price });
+    out.push({ id, tier, kind, weight: 0, price: TIER_INFO[tier].price });
   };
   // LEGENDARY: Bat Wings, the Angel Statue and the Coffin
   add("wings_wings_bat", "legendary", "cosmetic");
@@ -67,6 +69,11 @@ function buildPool(): Prize[] {
   for (const id of ["ears_ears_cat", "ears_ears_wolf", "hat_cloth_hood_sack", "hat_formal_tophat", "tail_tail_lizard_alt"]) add(id, "common", "cosmetic");
   // (the fence pillar, grave plot, weeds, dead tree and iron fence are not part of the event)
   for (const id of ["ff_gra_41", "ff_gra_56", "ff_gra_59", "ff_gra_46", "ff_gra_67", "ff_gra_73", "ff_gra_97", "ff_gra_54"]) add(id, "common", "furniture");
+  // each piece's weight = its tier's share / how many pieces the tier has
+  for (const t of Object.keys(TIER_INFO) as Prize["tier"][]) {
+    const inTier = out.filter((p) => p.tier === t);
+    for (const p of inTier) p.weight = TIER_INFO[t].share / inTier.length;
+  }
   return out;
 }
 const POOL: Prize[] = buildPool();
