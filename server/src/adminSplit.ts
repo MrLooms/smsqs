@@ -4,7 +4,7 @@
 // admin.html). Idempotent: once the admin's role is 'admin' there is nothing left to do.
 import { dbGet, withTransaction } from "./db";
 
-export const TEACHER_ACCOUNT = "MrLoomer";
+export const TEACHER_ACCOUNT = "Loomer";
 
 export async function migrateAdminToTeacher(): Promise<boolean> {
   const t = await dbGet<{ id: number }>("SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND role = 'teacher' AND is_admin = false", [TEACHER_ACCOUNT]);
