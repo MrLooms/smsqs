@@ -10,16 +10,16 @@
 // (0 Common .. 3 Legendary).
 export const SPECIES_BY_RARITY: string[][] = [
   ["chicken", "snake", "panda", "cat", "ferret"],
-  ["spider", "crab", "fox", "dragonfly", "golem", "twig"],
+  ["spider", "crab", "fox", "dragonfly", "golem", "twig", "jellyfish"],
   ["ember", "ice", "imp", "satyr", "swamp"],
   ["eyebat", "brain", "kobold"],
 ];
 
 export const DEFAULT_NAMES: Record<string, string> = {
   chicken: "Chicken", snake: "Snake", panda: "Red Panda", cat: "Cat", ferret: "Ferret",
-  spider: "Spider", crab: "Crab", fox: "Fox", dragonfly: "Dragonfly", golem: "Mini Golem", twig: "Twig",
+  spider: "Spider", crab: "Crab", fox: "Fox", dragonfly: "Dragonfly", golem: "Mini Golem", twig: "Twig", jellyfish: "Jellyfish",
   ember: "Ember", ice: "Iceling", imp: "Imp", satyr: "Satyr", swamp: "Swampling",
-  eyebat: "Eyebat", brain: "Brainiac", kobold: "Kobold Mage",
+  eyebat: "Skullflame", brain: "Brainiac", kobold: "Kobold Mage",
 };
 
 // how long an egg takes by rarity: Common 6h, Rare 12h, Epic 18h, Legendary 24h (an egg already incubating keeps its time)
@@ -47,7 +47,7 @@ export function xpNext(level: number, rarity: number): number {
 }
 
 // Support Lorekin (healers and mana) roll from a different set of natures than attackers; "steady" is in both.
-export const SUPPORT_SPECIES = new Set(["cat", "dragonfly", "crab", "satyr"]);
+export const SUPPORT_SPECIES = new Set(["cat", "dragonfly", "crab", "satyr", "jellyfish"]);
 export const NATURES_ATTACK = ["fierce", "swift", "keen", "steady"];
 export const NATURES_SUPPORT = ["gentle", "quick", "attentive", "steady"];
 
