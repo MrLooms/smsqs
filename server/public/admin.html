@@ -1,0 +1,1100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SMS Quest — Admin</title>
+<style>
+  :root {
+    --bg: #14161c;
+    --panel: #1e212b;
+    --panel-2: #262a37;
+    --border: #383e4f;
+    --text: #e8e9ee;
+    --muted: #9aa0b0;
+    --accent: #6ea8fe;
+    --accent-2: #ffcc66;
+    --danger: #ff6b6b;
+    --ok: #6fd08c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header .who { color: var(--muted); font-size: 13px; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .hidden { display: none !important; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 { margin-top: 0; font-size: 16px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input, select, textarea {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  textarea { width: 100%; min-height: 60px; resize: vertical; }
+  button {
+    background: var(--accent);
+    color: #0c1220;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+  button.danger { background: var(--danger); color: #2a0a0a; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  a.link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+  .list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    gap: 10px;
+  }
+  .list-item:last-child { border-bottom: none; }
+  .list-item .meta { color: var(--muted); font-size: 13px; }
+  .join-code {
+    font-family: monospace;
+    font-size: 22px;
+    letter-spacing: 3px;
+    color: var(--accent-2);
+    background: var(--panel-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    display: inline-block;
+  }
+  .error { color: var(--danger); font-size: 13px; margin-top: 8px; white-space: pre-line; }
+  .ok-msg { color: var(--ok); font-size: 13px; margin-top: 8px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tabs button { background: var(--panel-2); color: var(--muted); }
+  .tabs button.active { background: var(--accent); color: #0c1220; }
+  .question-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .question-row .prompt { font-weight: 600; margin-bottom: 6px; }
+  .answer-inputs { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center; margin: 10px 0; }
+  label.small { font-size: 12px; color: var(--muted); }
+  table.stats { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  table.stats th, table.stats td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  table.stats th { color: var(--muted); font-weight: 600; }
+  .accuracy-good { color: var(--ok); }
+  .accuracy-bad { color: var(--danger); }
+
+  .hint { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
+  .meta-line { color: var(--muted); font-size: 13px; }
+  .class-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .join-code.small { font-size: 16px; padding: 3px 10px; letter-spacing: 2px; }
+  .tabs { flex-wrap: wrap; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 8px; }
+  .tile { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .tile .num { font-size: 24px; font-weight: 700; }
+  .tile .lbl { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 10px; color: #14161c; }
+  .chip.high { background: var(--danger); }
+  .chip.watch { background: var(--accent-2); }
+  .bar { display: inline-block; width: 90px; height: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; vertical-align: middle; overflow: hidden; }
+  .bar > span { display: block; height: 100%; }
+  .weekly { display: flex; align-items: flex-end; gap: 8px; min-height: 100px; }
+  .wk { flex: 1; text-align: center; min-width: 30px; }
+  .wk-bar { border-radius: 3px 3px 0 0; margin: 2px auto 0; width: 70%; }
+  .wk-val { font-size: 11px; color: var(--muted); height: 14px; }
+  .wk-lbl { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  main { max-width: 1000px; }
+  #activity-grid th.dcol { padding: 8px 2px; text-align: center; font-size: 11px; font-weight: 400; }
+  #activity-grid td.dcell { padding: 6px 2px; text-align: center; }
+  #activity-grid .sq { display: inline-block; width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SMS Quest — Admin</h1>
+  <span class="who" id="whoami"></span>
+</header>
+
+<main>
+
+<!-- LOGIN -->
+<section id="view-auth" class="card hidden">
+  <h2>Admin login</h2>
+  <div class="row">
+    <input id="auth-username" placeholder="Username" autocomplete="username">
+    <input id="auth-password" type="password" placeholder="Password" autocomplete="current-password">
+    <button id="btn-login">Log in</button>
+  </div>
+  <div class="error hidden" id="auth-error"></div>
+  <p class="hint" style="margin-top:10px">Teachers use the <a class="link" href="/teacher.html">teacher dashboard</a>.</p>
+</section>
+
+<section id="view-main" class="hidden">
+  <div class="card" style="margin-bottom:12px">
+    <div class="tabs" id="admin-tabs" style="margin:0">
+      <button data-tab="accounts" class="active">Accounts</button>
+      <button data-tab="health">Game health</button>
+      <button data-tab="me">My password</button>
+    </div>
+  </div>
+
+  <!-- ACCOUNTS -->
+  <div class="card tabpane" id="atab-accounts">
+    <h2 style="margin-top:0">Reset any account's password</h2>
+    <p style="color:var(--muted); font-size:13px">
+      Admin-only. Works for ANY username - student or teacher, in any class or none - unlike the
+      per-class reset above, which only reaches your own students. Visible only on the
+      designated admin account.
+    </p>
+    <div class="row">
+      <input id="admin-reset-username" placeholder="Their username">
+      <input id="admin-reset-password" type="text" placeholder="New password (4+ characters)">
+      <button class="danger" id="btn-admin-reset">Reset Password</button>
+    </div>
+    <div class="error hidden" id="admin-reset-error"></div>
+    <div class="ok-msg hidden" id="admin-reset-success"></div>
+
+    <h3 style="margin-top:20px">All accounts</h3>
+    <div class="tabs" id="admin-account-tabs">
+      <button class="active" data-role="">All</button>
+      <button data-role="teacher">Teachers</button>
+      <button data-role="student">Students</button>
+      <button data-role="" data-inactive="1" id="admin-tab-inactive">Inactive 30+ days</button>
+    </div>
+    <div class="row hidden" id="admin-bulk-bar" style="margin-bottom:10px; align-items:center">
+      <span id="admin-bulk-count" style="color:var(--muted); font-size:13px"></span>
+      <button class="secondary" id="btn-bulk-select-all">Select all shown</button>
+      <button class="danger" id="btn-bulk-delete">Delete selected</button>
+    </div>
+    <input id="admin-account-search" placeholder="Search by username..." style="margin-bottom:10px">
+    <div class="ok-msg hidden" id="admin-generate-success"></div>
+    <table class="stats">
+      <thead><tr><th></th><th>Username</th><th>Type</th><th>Last active</th><th>Play time</th><th></th></tr></thead>
+      <tbody id="admin-accounts-tbody"></tbody>
+    </table>
+    <div class="error hidden" id="admin-accounts-error"></div>
+
+  </div>
+
+  <!-- GAME HEALTH: the analytics that used to sit in each teacher's class view -->
+  <div class="card tabpane hidden" id="atab-health">
+    <div class="row" style="margin-bottom:12px">
+      <label class="small">Show</label>
+      <select id="health-class"></select>
+    </div>
+    <p class="hint">Game telemetry for tuning the game - not for teachers. "All classes" counts every student who is in a class.</p>
+    <div class="tabs" id="health-tabs">
+      <button data-tab="activity" class="active">Activity</button>
+      <button data-tab="game">Game</button>
+      <button data-tab="onboarding">Onboarding</button>
+    </div>
+  <div class="tabpane hidden" id="tab-activity">
+    <div class="tiles" id="activity-tiles"></div>
+    <h3>Who played when</h3>
+    <p class="hint">Last 14 days. Darker = more play that day; hover a square for the time. Least active students are listed first.</p>
+    <div style="overflow-x:auto"><table class="stats" id="activity-grid">
+      <thead></thead>
+      <tbody></tbody>
+    </table></div>
+    <h3>Class by day</h3>
+    <p class="hint">Bars are total play time; hover for how many students played and how many questions were answered.</p>
+    <div id="activity-days" class="weekly"></div>
+    <h3>Where the time goes</h3>
+    <p id="activity-areas" class="hint"></p>
+  </div>
+
+  <div class="tabpane hidden" id="tab-game">
+    <div class="tiles" id="game-tiles"></div>
+    <h3>Where the class is</h3>
+    <p class="hint">Each dungeon needs the previous biome's boss, so a student's stage is the first boss they have not beaten yet.</p>
+    <div id="game-stages"></div>
+    <h3>Students</h3>
+    <p class="hint">Click a column to sort. Bosses are kills per biome: Desert, Swamp, Ice, Lava.</p>
+    <div style="overflow-x:auto"><table class="stats" id="game-table">
+      <thead><tr>
+        <th data-sort="username">Student</th><th data-sort="level">Level</th><th data-sort="rank">Stage</th><th data-sort="boss_kills_total">Bosses</th>
+        <th data-sort="runs_14d">Dungeon runs</th><th data-sort="endless_best">Endless</th><th data-sort="lorekin">Lorekin</th><th data-sort="furniture">Home</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <h2 style="margin-top:28px; font-size:15px">Game insights - last 14 days</h2>
+    <p class="hint" id="ev-note"></p>
+    <h3>Hotspots</h3>
+    <p class="hint">Places where several students keep dying - a sign something may be too hard or too crowded (last 14 days).</p>
+    <div id="overview-hotspots"></div>
+    <h3>Where students die</h3>
+    <div id="ev-deaths"></div>
+    <h3>Dungeon runs</h3>
+    <table class="stats" id="ev-dungeons"><thead><tr><th>Biome</th><th>Entered</th><th>Left</th><th>Boss beaten</th><th>Deaths there</th></tr></thead><tbody></tbody></table>
+    <h3>Menus and features used</h3>
+    <p class="hint">How many students opened each one.</p>
+    <div id="ev-panels"></div>
+    <h3>Where sessions end</h3>
+    <p class="hint">The last place a student was when they stopped playing (sessions over a minute long). Lots of endings in one place can mean students get stuck, frustrated or bored there.</p>
+    <div id="ev-quits"></div>
+    <h3>Gold per day</h3>
+    <p class="hint">Blue = gold earned (shop sales included), orange = gold spent. Whole class.</p>
+    <div id="ev-gold" class="weekly"></div>
+    <h3>By student</h3>
+    <div style="overflow-x:auto"><table class="stats" id="ev-table">
+      <thead><tr>
+        <th data-sort="username">Student</th><th data-sort="levels_gained">Levels gained</th><th data-sort="deaths">Deaths</th><th data-sort="dungeons">Dungeons</th><th data-sort="bosses">Bosses</th>
+        <th data-sort="crafts">Crafts</th><th data-sort="enchants">Enchants</th><th data-sort="quests_done">Quests done</th><th data-sort="gold_in">Gold in</th><th data-sort="gold_out">Gold out</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+
+  <div class="tabpane hidden" id="tab-onboarding">
+    <div class="tiles" id="onb-tiles"></div>
+    <h3>Students</h3>
+    <p class="hint">Basic Training is the guided first-login tutorial; Getting Started is the checklist of first goals (7 items) that pays a Common Egg; the tours explain each building's menu the first time it opens. Players who were already playing when tutorials arrived skip Basic Training and the checklist.</p>
+    <div style="overflow-x:auto"><table class="stats" id="onb-table">
+      <thead><tr><th>Student</th><th>Basic Training</th><th>Getting Started</th><th>Feature tours</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <h3>Basic Training: how far students get</h3>
+    <p class="hint">Students who reached each step, in order. A big drop between two steps is where students get stuck.</p>
+    <div id="onb-funnel"></div>
+    <h3>Getting Started checklist</h3>
+    <div id="onb-checklist"></div>
+    <h3>Feature tours seen</h3>
+    <div id="onb-tours"></div>
+  </div>
+
+  </div>
+
+  <!-- MY PASSWORD -->
+  <div class="card tabpane hidden" id="atab-me">
+  <div id="my-password-card">
+    <h2>Change my password</h2>
+    <div class="row">
+      <input id="my-pw-current" type="password" placeholder="Current password" autocomplete="current-password">
+      <input id="my-pw-new" type="password" placeholder="New password (4+ characters)" autocomplete="new-password">
+      <input id="my-pw-confirm" type="password" placeholder="New password again" autocomplete="new-password">
+      <button id="btn-change-my-password">Change password</button>
+    </div>
+    <div class="error hidden" id="my-pw-error"></div>
+    <div class="ok-msg hidden" id="my-pw-success"></div>
+  </div>
+
+
+  </div>
+</section>
+
+</main>
+
+<script>
+const API = "";
+let token = localStorage.getItem("admin_token") || null;
+let username = localStorage.getItem("admin_username") || null;
+
+function show(id) {
+  ["view-auth", "view-main"].forEach(v => {
+    document.getElementById(v).classList.toggle("hidden", v !== id);
+  });
+}
+
+// Milestone 274: playtime and last-active displays
+function fmtDuration(secs) {
+  secs = Math.round(secs || 0);
+  if (secs < 60) return secs > 0 ? "<1m" : "0m";
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+  return h > 0 ? h + "h " + m + "m" : m + "m";
+}
+function fmtAgo(iso) {
+  if (!iso) return "never";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  return days + " days ago";
+}
+
+async function api(method, path, body) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = "Bearer " + token;
+  const res = await fetch(API + path, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || ("Request failed (" + res.status + ")"));
+    if (data.row_errors) err.rowErrors = data.row_errors;
+    throw err;
+  }
+  return data;
+}
+
+function setError(elId, msg) {
+  const el = document.getElementById(elId);
+  el.textContent = msg;
+  el.classList.toggle("hidden", !msg);
+}
+
+
+function setError(elId, msg) {
+  const el = document.getElementById(elId);
+  el.textContent = msg;
+  el.classList.toggle("hidden", !msg);
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function pct(correct, attempts) {
+  if (attempts === 0) return "—";
+  return Math.round((correct / attempts) * 100) + "%";
+}
+
+function accuracyClass(correct, attempts) {
+  if (attempts === 0) return "";
+  const r = correct / attempts;
+  return r >= 0.7 ? "accuracy-good" : (r < 0.4 ? "accuracy-bad" : "");
+}
+
+function fmtPct(x) { return x === null || x === undefined ? "—" : Math.round(x * 100) + "%"; }
+
+// a little horizontal bar with the percentage beside it
+function accBar(x) {
+  if (x === null || x === undefined) return "—";
+  const col = x >= 0.7 ? "var(--ok)" : (x < 0.5 ? "var(--danger)" : "var(--accent-2)");
+  return `<span class="bar"><span style="width:${Math.round(x * 100)}%; background:${col}"></span></span> ${Math.round(x * 100)}%`;
+}
+
+// show one tab of a tab bar and hide the others' panes (pane id = prefix + tab name)
+function selectTab(tabsId, prefix, name) {
+  document.querySelectorAll("#" + tabsId + " button").forEach(b => {
+    b.classList.toggle("active", b.dataset.tab === name);
+    document.getElementById(prefix + b.dataset.tab).classList.toggle("hidden", b.dataset.tab !== name);
+  });
+}
+// the last 8 weeks as bars (height = accuracy, label = answers); weeks: [{ week: "YYYY-MM-DD" (a Monday), attempts, correct }]
+function renderWeekly(el, weeks) {
+  el.innerHTML = "";
+  const by = {};
+  weeks.forEach(w => { by[w.week] = w; });
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); // this week's Monday
+  let any = false;
+  const cols = [];
+  for (let i = 7; i >= 0; i--) {
+    const k = new Date(d.getTime() - i * 7 * 86400000).toISOString().slice(0, 10);
+    const w = by[k];
+    if (w && w.attempts > 0) any = true;
+    cols.push({ key: k, w });
+  }
+  if (!any) { el.innerHTML = "<em class='hint'>No answers recorded in the last 8 weeks.</em>"; return; }
+  cols.forEach(c => {
+    const acc = c.w && c.w.attempts > 0 ? c.w.correct / c.w.attempts : null;
+    const col = document.createElement("div");
+    col.className = "wk";
+    const colour = acc === null ? "var(--border)" : (acc >= 0.7 ? "var(--ok)" : (acc < 0.5 ? "var(--danger)" : "var(--accent-2)"));
+    col.innerHTML = `<div class="wk-val">${acc === null ? "" : Math.round(acc * 100) + "%"}</div>
+      <div class="wk-bar" style="height:${acc === null ? 3 : Math.max(4, Math.round(acc * 70))}px; background:${colour}" title="${c.key}: ${c.w ? c.w.attempts : 0} answers"></div>
+      <div class="wk-lbl">${c.key.slice(5)}</div>`;
+    el.appendChild(col);
+  });
+}
+
+
+// ---- login / session ----
+document.getElementById("btn-login").onclick = async () => {
+  setError("auth-error", "");
+  const u = document.getElementById("auth-username").value.trim();
+  const p = document.getElementById("auth-password").value;
+  try {
+    const data = await api("POST", "/api/teacher/login", { username: u, password: p });
+    if (!data.is_admin) return setError("auth-error", "That is not the admin account. Teachers use the teacher dashboard.");
+    token = data.token;
+    username = data.username;
+    localStorage.setItem("admin_token", token);
+    localStorage.setItem("admin_username", username);
+    enterAdmin();
+  } catch (e) { setError("auth-error", e.message); }
+};
+document.getElementById("auth-password").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("btn-login").click(); });
+
+function logout() {
+  token = null;
+  localStorage.removeItem("admin_token");
+  localStorage.removeItem("admin_username");
+  document.getElementById("whoami").textContent = "";
+  show("view-auth");
+}
+
+document.querySelectorAll("#admin-tabs button").forEach(b => {
+  b.onclick = () => {
+    selectTab("admin-tabs", "atab-", b.dataset.tab);
+    if (b.dataset.tab === "health" && !healthLoaded) loadHealth();
+  };
+});
+document.querySelectorAll("#health-tabs button").forEach(b => {
+  b.onclick = () => selectTab("health-tabs", "tab-", b.dataset.tab);
+});
+
+async function enterAdmin() {
+  document.getElementById("whoami").innerHTML = escapeHtml(username) + ' &middot; <a class="link" id="logout-link">log out</a>';
+  document.getElementById("logout-link").onclick = logout;
+  show("view-main");
+  selectTab("admin-tabs", "atab-", "accounts");
+  selectTab("health-tabs", "tab-", "activity");
+  healthLoaded = false;
+  const data = await api("GET", "/api/admin/classes");
+  const sel = document.getElementById("health-class");
+  sel.innerHTML = "";
+  const all = document.createElement("option");
+  all.value = "all";
+  all.textContent = "All classes";
+  sel.appendChild(all);
+  data.classes.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = c.teacher + " - " + c.name + " (" + c.student_count + ")";
+    sel.appendChild(opt);
+  });
+  sel.onchange = () => loadHealth();
+  await refreshAdminAccounts();
+}
+
+// ---- game health ----
+let healthLoaded = false;
+async function loadHealth() {
+  healthLoaded = true;
+  const scope = document.getElementById("health-class").value || "all";
+  try {
+    const [act, prog, evs] = await Promise.all([
+      api("GET", "/api/admin/classes/" + scope + "/activity"),
+      api("GET", "/api/admin/classes/" + scope + "/progress"),
+      api("GET", "/api/admin/classes/" + scope + "/events"),
+    ]);
+    renderActivity(act);
+    progressCache = prog;
+    renderGame();
+    eventsCache = evs;
+    renderEvents();
+    loadTraining(scope);
+  } catch (e) {
+    healthLoaded = false;
+    alert(e.message);
+  }
+}
+
+// ---- Game insights from the event log (Milestone 307) ----
+let eventsCache = null;
+let evSort = { key: "deaths", dir: -1 };
+const PANEL_LABELS = { smith: "Smith", enchant: "Magus", lorekin: "Lorekin Keeper", wardrobe: "Wardrobe", dye: "Dye Gear", carpenter: "Carpenter", shop: "Shop", storage: "Storage chest",
+  quests: "Quest board", class_desk: "Class desk", party: "Party board", leaderboard: "Leaderboard", tier_keeper: "World Tier Keeper", warpstone: "Warpstone keeper", potions: "Potion Master",
+  tutor: "Tutor", book: "Book (inventory)", house: "House editor" };
+
+function placeLabel(p) {
+  if (!p) return "Unknown";
+  const parts = p.split(":");
+  const b = parts[1] ? parts[1][0].toUpperCase() + parts[1].slice(1) : "";
+  if (parts[0] === "world") return b + " overworld";
+  if (parts[0] === "dungeon") return b + " dungeon";
+  if (parts[0] === "boss") return b + " boss room";
+  if (parts[0] === "town") return "Town";
+  if (parts[0] === "training") return "Basic Training";
+  return p;
+}
+
+// gold earned / spent per day for the last 14 days (days: [{ day, gold_in, gold_out }])
+function renderGoldBars(el, days) {
+  el.innerHTML = "";
+  const by = {};
+  days.forEach(d => { by[d.day] = d; });
+  let peak = 0;
+  const cols = [];
+  for (let i = 13; i >= 0; i--) {
+    const key = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    const d = by[key] || { gold_in: 0, gold_out: 0 };
+    peak = Math.max(peak, d.gold_in, d.gold_out);
+    cols.push({ key, d });
+  }
+  if (peak === 0) { el.innerHTML = "<em class='hint'>No gold recorded in the last 14 days.</em>"; return; }
+  cols.forEach(c => {
+    const col = document.createElement("div");
+    col.className = "wk";
+    const h = v => v > 0 ? Math.max(4, Math.round(70 * v / peak)) : 2;
+    col.innerHTML = "<div class='wk-val'></div><div style='display:flex; align-items:flex-end; justify-content:center; gap:2px; height:72px' title='" + c.key + ": +" + c.d.gold_in + " earned, -" + c.d.gold_out + " spent'>" +
+      "<div style='width:9px; height:" + h(c.d.gold_in) + "px; background:var(--accent); border-radius:2px 2px 0 0'></div>" +
+      "<div style='width:9px; height:" + h(c.d.gold_out) + "px; background:var(--accent-2); border-radius:2px 2px 0 0'></div></div><div class='wk-lbl'>" + c.key.slice(5) + "</div>";
+    el.appendChild(col);
+  });
+}
+
+const EVENT_TEXT = {
+  death: e => "Died in " + placeLabel(e.detail),
+  level: e => "Reached level " + e.detail,
+  dungeon_in: e => "Entered the " + e.detail + " dungeon",
+  dungeon_out: e => "Left the " + e.detail + " dungeon",
+  boss: e => "Beat the " + e.detail + " boss",
+  craft: e => "Crafted something (" + (e.detail || "item") + ")",
+  enchant: e => "Enchanted a weapon (" + (e.detail || "") + ")",
+  hatch: () => "Hatched a Lorekin",
+  shop_buy: e => "Bought from the shop (" + e.n + " gold)",
+  shop_sell: e => "Sold to the shop (" + e.n + " gold)",
+  quest_take: e => "Took a quest (" + (e.detail || "") + ")",
+  quest_done: e => "Finished a quest (" + (e.detail || "") + ")",
+};
+
+function evListRows(el, rows, maxVal, empty) {
+  el.innerHTML = "";
+  if (rows.length === 0) { el.innerHTML = "<em class='hint'>" + empty + "</em>"; return; }
+  rows.forEach(r => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = "<div style='min-width:200px'>" + escapeHtml(r.label) + "</div><div style='flex:1'>" + onbBar(r.value, maxVal, r.colour) + "</div><div style='width:170px; text-align:right'>" + r.text + "</div>";
+    el.appendChild(row);
+  });
+}
+
+function renderEvents() {
+  if (!eventsCache) return;
+  const e = eventsCache;
+  const note = document.getElementById("ev-note");
+  note.textContent = e.since ? "Recorded since " + e.since.slice(0, 10) + ". Counts cover the last 14 days." : "No events recorded yet - they start once students play on a game version that includes the event log.";
+
+  const dMax = Math.max(1, ...e.deaths.map(d => d.deaths));
+  evListRows(document.getElementById("ev-deaths"), e.deaths.map(d => ({ label: placeLabel(d.place), value: d.deaths, colour: "var(--danger)", text: d.deaths + " death" + (d.deaths === 1 ? "" : "s") + " &middot; " + d.students + " student" + (d.students === 1 ? "" : "s") })), dMax, "No deaths recorded.");
+
+  // dungeon runs per biome
+  const biomes = ["desert", "swamp", "ice", "lava"];
+  const val = (kind, b) => { const r = e.dungeon.find(x => x.kind === kind && x.biome === b); return r ? r : { total: 0, students: 0 }; };
+  const deathsIn = b => e.deaths.filter(d => d.place === "dungeon:" + b || d.place === "boss:" + b).reduce((a, d) => a + d.deaths, 0);
+  const tb = document.querySelector("#ev-dungeons tbody");
+  tb.innerHTML = "";
+  biomes.forEach(b => {
+    const en = val("dungeon_in", b), out = val("dungeon_out", b), bs = val("boss", b);
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td>" + b[0].toUpperCase() + b.slice(1) + "</td><td>" + en.total + " <span class='meta'>(" + en.students + " students)</span></td><td>" + out.total + "</td><td>" + bs.total + " <span class='meta'>(" + bs.students + " students)</span></td><td>" + deathsIn(b) + "</td>";
+    tb.appendChild(tr);
+  });
+
+  const hs = document.getElementById("overview-hotspots");
+  hs.innerHTML = "";
+  if (!e.since) hs.innerHTML = "<em class='hint'>No game events recorded yet.</em>";
+  else if (e.hotspots.length === 0) hs.innerHTML = "<em>No hotspots right now.</em>";
+  e.hotspots.forEach(h => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = "<div><strong>" + escapeHtml(placeLabel(h.place)) + "</strong> <span class='chip high'>Hotspot</span><div class='meta'>" + h.deaths + " deaths across " + h.students + " students</div></div>";
+    hs.appendChild(row);
+  });
+  renderGoldBars(document.getElementById("ev-gold"), e.gold_days);
+
+  const n = e.students_total;
+  evListRows(document.getElementById("ev-panels"), e.panels.map(p => ({ label: PANEL_LABELS[p.feature] || p.feature, value: p.students, text: p.students + " / " + n + " &middot; " + p.uses + " opens" })), Math.max(1, n), "No menus opened.");
+
+  const qMax = Math.max(1, ...e.quits.map(q => q.sessions));
+  evListRows(document.getElementById("ev-quits"), e.quits.map(q => ({ label: placeLabel(q.place), value: q.sessions, colour: "var(--accent-2)", text: q.sessions + " session" + (q.sessions === 1 ? "" : "s") + " &middot; " + q.students + " student" + (q.students === 1 ? "" : "s") })), qMax, "No finished sessions recorded.");
+
+  const body = document.querySelector("#ev-table tbody");
+  body.innerHTML = "";
+  const list = e.students.slice();
+  const k = evSort.key, dir = evSort.dir;
+  list.sort((a, b) => {
+    if (k === "username") return dir * a.username.localeCompare(b.username);
+    return dir * ((a[k] || 0) - (b[k] || 0)) || a.username.localeCompare(b.username);
+  });
+  if (list.length === 0) body.innerHTML = "<tr><td colspan='10'><em>No students yet.</em></td></tr>";
+  list.forEach(s => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td><a class='link'>" + escapeHtml(s.username) + "</a></td><td>" + s.levels_gained + (s.top_level ? " <span class='meta'>(to Lv " + s.top_level + ")</span>" : "") + "</td><td>" + s.deaths + "</td><td>" + s.dungeons + "</td><td>" + s.bosses + "</td><td>" + s.crafts + "</td><td>" + s.enchants + "</td><td>" + s.quests_done + "</td><td>" + s.gold_in + "</td><td>" + s.gold_out + "</td>";
+    body.appendChild(tr);
+  });
+  document.querySelectorAll("#ev-table th").forEach(th => {
+    const base = th.textContent.replace(/ [▲▼]$/, "");
+    th.textContent = base + (th.dataset.sort === k ? (dir > 0 ? " ▲" : " ▼") : "");
+  });
+}
+document.querySelectorAll("#ev-table th").forEach(th => {
+  th.style.cursor = "pointer";
+  th.onclick = () => {
+    const k = th.dataset.sort;
+    evSort = evSort.key === k ? { key: k, dir: -evSort.dir } : { key: k, dir: k === "username" ? 1 : -1 };
+    renderEvents();
+  };
+});
+
+// ---- Game tab (Milestone 305) ----
+let progressCache = null;
+let gameSort = { key: "level", dir: 1 };
+const STAGE_NAMES = ["Forest", "Working on Swamp", "Working on Ice", "Working on Lava", "All four bosses beaten", "Endless Dungeon"];
+
+// 0 = no boss yet ... 4 = all four beaten, 5 = in the Endless Dungeon (a boss is only reachable after the one before it)
+function stageRank(s) {
+  let r = 0;
+  for (const k of s.boss_kills) { if (k > 0) r += 1; else break; }
+  return r === 4 && s.endless_best > 0 ? 5 : r;
+}
+
+function renderGame() {
+  if (!progressCache) return;
+  const list = progressCache.students.map(s => Object.assign({ rank: stageRank(s) }, s));
+  const n = list.length;
+  const past = list.filter(s => s.rank >= 1).length;
+  const tiles = [
+    [progressCache.median_level === null ? "—" : progressCache.median_level, "median level"],
+    [past + " / " + n, "have beaten a boss"],
+    [list.filter(s => s.rank >= 4).length, "beat all four bosses"],
+    [list.reduce((a, s) => a + s.lorekin, 0), "Lorekin hatched"],
+  ];
+  document.getElementById("game-tiles").innerHTML = tiles.map(t => `<div class="tile"><div class="num">${t[0]}</div><div class="lbl">${t[1]}</div></div>`).join("");
+
+  const st = document.getElementById("game-stages");
+  st.innerHTML = "";
+  if (n === 0) st.innerHTML = "<em>No students yet.</em>";
+  const counts = STAGE_NAMES.map((_, i) => list.filter(s => s.rank === i).length);
+  const peak = Math.max(1, ...counts);
+  STAGE_NAMES.forEach((name, i) => {
+    if (n === 0) return;
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `<div style="min-width:190px">${name}</div><div style="flex:1"><span class="bar" style="width:100%; max-width:320px"><span style="width:${Math.round(100 * counts[i] / peak)}%; background:var(--accent)"></span></span></div><div style="width:40px; text-align:right">${counts[i]}</div>`;
+    st.appendChild(row);
+  });
+
+  const body = document.querySelector("#game-table tbody");
+  body.innerHTML = "";
+  const k = gameSort.key, dir = gameSort.dir;
+  list.sort((a, b) => {
+    const av = a[k], bv = b[k];
+    if (k === "username") return dir * String(av).localeCompare(String(bv));
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    return dir * (av - bv) || a.username.localeCompare(b.username);
+  });
+  if (n === 0) body.innerHTML = "<tr><td colspan='8'><em>No students yet.</em></td></tr>";
+  list.forEach(s => {
+    const tr = document.createElement("tr");
+    const bosses = s.boss_kills.map((c, i) => `<span class="chip ${c > 0 ? "watch" : ""}" style="${c > 0 ? "" : "background:var(--panel-2); color:var(--muted)"}" title="${["Desert", "Swamp", "Ice", "Lava"][i]}: ${c} kill${c === 1 ? "" : "s"}">${["D", "S", "I", "L"][i]}${c > 0 ? " " + c : ""}</span>`).join(" ");
+    tr.innerHTML = `<td>${escapeHtml(s.username)}</td><td>${s.level === null ? "—" : s.level}</td><td>${STAGE_NAMES[s.rank]}</td><td>${bosses}</td>
+      <td>${s.runs_14d} <span class="meta">(${s.runs_total} total)</span></td><td>${s.endless_best > 0 ? s.endless_best : "—"}</td>
+      <td>${s.lorekin > 0 ? s.lorekin + " <span class='meta'>(top Lv " + s.top_lorekin_level + ")</span>" : "—"}</td><td>${escapeHtml(s.home)} <span class="meta">(${s.furniture} pieces)</span></td>`;
+    body.appendChild(tr);
+  });
+  document.querySelectorAll("#game-table th").forEach(th => {
+    const base = th.textContent.replace(/ [▲▼]$/, "");
+    th.textContent = base + (th.dataset.sort === k ? (dir > 0 ? " ▲" : " ▼") : "");
+  });
+}
+document.querySelectorAll("#game-table th").forEach(th => {
+  th.style.cursor = "pointer";
+  th.onclick = () => {
+    const k = th.dataset.sort;
+    gameSort = gameSort.key === k ? { key: k, dir: -gameSort.dir } : { key: k, dir: k === "username" ? 1 : -1 };
+    renderGame();
+  };
+});
+
+// ---- Activity tab (Milestone 304) ----
+function renderActivity(act) {
+  const names = { hub: "Town", interior: "Buildings and home", overworld: "Overworld", dungeon: "Dungeons", questions: "Answering questions", menu: "Menus", other: "Other" };
+  const n = act.students.length;
+  const total = act.students.reduce((a, s) => a + s.secs_14d, 0);
+  const activeAny = act.students.filter(s => s.active_days_14d > 0).length;
+  const sessions = act.students.reduce((a, s) => a + s.sessions_14d, 0);
+  const tiles = [
+    [activeAny + " / " + n, "played in 14 days"],
+    [fmtDuration(total), "total play (14 days)"],
+    [n > 0 ? fmtDuration(total / n) : "0m", "average per student"],
+    [sessions, "sessions"],
+  ];
+  document.getElementById("activity-tiles").innerHTML = tiles.map(t => `<div class="tile"><div class="num">${t[0]}</div><div class="lbl">${t[1]}</div></div>`).join("");
+
+  // the grid: one row per student, one square per day
+  const head = document.querySelector("#activity-grid thead");
+  head.innerHTML = "<tr><th>Student</th>" + act.days.map(d => `<th class="dcol" title="${d}">${d.slice(8)}</th>`).join("") +
+    "<th>Played</th><th>Days</th><th>Sessions</th><th>Avg session</th></tr>";
+  const body = document.querySelector("#activity-grid tbody");
+  body.innerHTML = "";
+  if (n === 0) { body.innerHTML = "<tr><td colspan='" + (act.days.length + 5) + "'><em>No students yet.</em></td></tr>"; }
+  let peak = 1800; // a darkest square = 30 minutes, or the busiest day if that is more
+  act.students.forEach(s => Object.values(s.by_day).forEach(v => { if (v > peak) peak = v; }));
+  act.students.slice().sort((a, b) => a.secs_14d - b.secs_14d || a.username.localeCompare(b.username)).forEach(s => {
+    const tr = document.createElement("tr");
+    const cells = act.days.map(d => {
+      const v = s.by_day[d] || 0;
+      const a = v > 0 ? (0.18 + 0.82 * Math.min(1, v / peak)).toFixed(2) : 0;
+      return `<td class="dcell"><span class="sq" style="background:${v > 0 ? "rgba(110,168,254," + a + ")" : "var(--panel-2)"}" title="${escapeHtml(s.username)} - ${d}: ${v > 0 ? fmtDuration(v) : "no play"}"></span></td>`;
+    }).join("");
+    tr.innerHTML = `<td>${escapeHtml(s.username)}</td>${cells}<td>${fmtDuration(s.secs_14d)}</td><td>${s.active_days_14d}</td><td>${s.sessions_14d}</td><td>${s.avg_session_secs === null ? "—" : fmtDuration(s.avg_session_secs)}</td>`;
+    body.appendChild(tr);
+  });
+
+  // class by day
+  const el = document.getElementById("activity-days");
+  el.innerHTML = "";
+  const maxDay = Math.max(60, ...act.class_days.map(d => d.seconds));
+  if (act.class_days.every(d => d.seconds === 0 && d.answers === 0)) {
+    el.innerHTML = "<em class='hint'>No play recorded in the last 14 days.</em>";
+  } else {
+    act.class_days.forEach(d => {
+      const col = document.createElement("div");
+      col.className = "wk";
+      col.innerHTML = `<div class="wk-val">${d.seconds > 0 ? fmtDuration(d.seconds) : ""}</div>
+        <div class="wk-bar" style="height:${d.seconds > 0 ? Math.max(4, Math.round(70 * d.seconds / maxDay)) : 3}px; background:${d.seconds > 0 ? "var(--accent)" : "var(--border)"}"
+          title="${d.day}: ${d.active_students} student${d.active_students === 1 ? "" : "s"} played, ${d.answers} question${d.answers === 1 ? "" : "s"} answered"></div>
+        <div class="wk-lbl">${d.day.slice(5)}</div>`;
+      el.appendChild(col);
+    });
+  }
+  document.getElementById("activity-areas").textContent = act.areas.length === 0 ? "No play time recorded yet."
+    : "Last 14 days: " + act.areas.map(a => (names[a.area] || a.area) + " " + fmtDuration(a.seconds)).join(" · ");
+}
+
+// ---- Onboarding tab: Basic Training, Getting Started checklist, feature tours (Milestones 297, 306) ----
+const BT_STEPS = [
+  ["welcome", "Welcome"], ["move", "Walk to the marker"], ["pickup", "Pick up the sword"], ["book", "Open the book"], ["equip", "Equip the sword"],
+  ["unbook", "Close the book"], ["attack", "Hit the dummy"], ["dodge", "Dodge"], ["flask", "Drink a potion"], ["tutor", "Talk to the Tutor"],
+  ["tutor_close", "Close the Tutor"], ["shrine", "Answer the shrine"], ["reward", "Take the rewards"], ["leave", "Leave the room"],
+];
+const CHECKLIST_LABELS = { class: "Join a class", quest: "Take a quest", craft: "Craft an item", home: "Visit your home", dungeon: "Enter a dungeon", boss: "Defeat a dungeon boss", crystal: "Spend a crystal charge" };
+const CHECKLIST_ORDER = ["class", "quest", "craft", "home", "dungeon", "boss", "crystal"];
+const TOUR_LABELS = { f_house: "House editor", f_smith: "Smith", f_enchant: "Magus", f_lorekin: "Lorekin Keeper", f_wardrobe: "Wardrobe", f_carpenter: "Carpenter" };
+
+function onbBar(count, total, colour) {
+  const w = total > 0 ? Math.round(100 * count / total) : 0;
+  return `<span class="bar" style="width:100%; max-width:300px"><span style="width:${w}%; background:${colour || "var(--accent)"}"></span></span>`;
+}
+
+async function loadTraining(classId) {
+  let data;
+  try { data = await api("GET", "/api/admin/classes/" + classId + "/tutorial"); }
+  catch (e) { document.getElementById("onb-table").querySelector("tbody").innerHTML = "<tr><td colspan='5'><em>" + escapeHtml(e.message) + "</em></td></tr>"; return; }
+  const label = { done: "Finished", skipped: "Skipped", existing: "Was already playing", in_progress: "In progress", not_started: "Not started" };
+  const stepName = {};
+  BT_STEPS.forEach(x => { stepName[x[0]] = x[1]; });
+  const list = data.students;
+  const n = list.length;
+  const counted = list.filter(s => s.status !== "existing"); // players who were already playing never had Basic Training
+  const finished = counted.filter(s => s.status === "done").length;
+  const skipped = counted.filter(s => s.status === "skipped").length;
+  const inProg = counted.filter(s => s.status === "in_progress").length;
+  const notStarted = counted.filter(s => s.status === "not_started").length;
+  const cl = list.filter(s => !s.checklist.legacy);
+  const clDone = cl.filter(s => s.checklist.done).length;
+
+  const tiles = [
+    [finished + " / " + counted.length, "finished Basic Training"],
+    [skipped, "skipped it"],
+    [inProg + notStarted, "still to finish it"],
+    [cl.length === 0 ? "—" : clDone + " / " + cl.length, "completed Getting Started"],
+  ];
+  document.getElementById("onb-tiles").innerHTML = tiles.map(t => "<div class='tile'><div class='num'>" + t[0] + "</div><div class='lbl'>" + t[1] + "</div></div>").join("");
+
+  const body = document.getElementById("onb-table").querySelector("tbody");
+  body.innerHTML = "";
+  if (n === 0) body.innerHTML = "<tr><td colspan='5'><em>No students yet.</em></td></tr>";
+  list.forEach(s => {
+    const tr = document.createElement("tr");
+    const bt = label[s.status] + (s.status === "in_progress" && s.step ? " - on " + escapeHtml(stepName[s.step] || s.step) : "");
+    const ck = s.checklist.legacy ? "<span class='meta'>n/a</span>"
+      : (s.checklist.done ? "<span class='accuracy-good'>Done</span>" : s.checklist.ticked.length + " / " + data.checklist_items.length);
+    const dots = data.tour_ids.map(t => {
+      const seen = s.tours.includes(t);
+      return "<span class='chip " + (seen ? "watch" : "") + "' style='" + (seen ? "" : "background:var(--panel-2); color:var(--muted)") + "' title='" + escapeHtml(TOUR_LABELS[t] || t) + (seen ? " - seen" : " - not yet") + "'>" + escapeHtml((TOUR_LABELS[t] || t)[0]) + "</span>";
+    }).join(" ");
+    tr.innerHTML = "<td>" + escapeHtml(s.username) + "</td><td>" + bt + "</td><td>" + ck + "</td><td>" + dots + "</td><td></td>";
+    body.appendChild(tr);
+  });
+
+  // funnel: students who reached each step (events are logged per step), then finished
+  const reached = {};
+  data.steps.forEach(x => { reached[x.step] = x.students; });
+  const fun = document.getElementById("onb-funnel");
+  fun.innerHTML = "";
+  const total = counted.length;
+  if (total === 0) fun.innerHTML = "<em class='hint'>No students have started Basic Training yet.</em>";
+  else {
+    let prev = null;
+    BT_STEPS.forEach(x => {
+      const c = reached[x[0]] || 0;
+      const drop = prev === null ? 0 : prev - c;
+      const bad = prev !== null && drop >= Math.max(2, Math.ceil(total * 0.2));
+      const row = document.createElement("div");
+      row.className = "list-item";
+      row.innerHTML = "<div style='min-width:180px'>" + escapeHtml(x[1]) + "</div><div style='flex:1'>" + onbBar(c, total, bad ? "var(--danger)" : "var(--accent)") + "</div><div style='width:130px; text-align:right'>" + c + (bad ? " <span class='meta' style='color:var(--danger)'>(" + drop + " fewer)</span>" : "") + "</div>";
+      fun.appendChild(row);
+      prev = c;
+    });
+    const fr = document.createElement("div");
+    fr.className = "list-item";
+    fr.innerHTML = "<div style='min-width:180px'><strong>Finished</strong></div><div style='flex:1'>" + onbBar(finished, total, "var(--ok)") + "</div><div style='width:130px; text-align:right'>" + finished + "</div>";
+    fun.appendChild(fr);
+  }
+
+  // checklist items
+  const ce = document.getElementById("onb-checklist");
+  ce.innerHTML = "";
+  if (cl.length === 0) ce.innerHTML = "<em class='hint'>Nobody in this class has the checklist yet.</em>";
+  else CHECKLIST_ORDER.forEach(id => {
+    if (!data.checklist_items.includes(id)) return;
+    const c = cl.filter(s => s.checklist.done || s.checklist.ticked.includes(id)).length;
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = "<div style='min-width:180px'>" + escapeHtml(CHECKLIST_LABELS[id] || id) + "</div><div style='flex:1'>" + onbBar(c, cl.length) + "</div><div style='width:130px; text-align:right'>" + c + " / " + cl.length + "</div>";
+    ce.appendChild(row);
+  });
+
+  // tours
+  const te = document.getElementById("onb-tours");
+  te.innerHTML = "";
+  if (n === 0) te.innerHTML = "<em class='hint'>No students yet.</em>";
+  data.tour_ids.forEach(id => {
+    const c = list.filter(s => s.tours.includes(id)).length;
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = "<div style='min-width:180px'>" + escapeHtml(TOUR_LABELS[id] || id) + "</div><div style='flex:1'>" + onbBar(c, n) + "</div><div style='width:130px; text-align:right'>" + c + " / " + n + "</div>";
+    te.appendChild(row);
+  });
+
+}
+
+
+// Milestone 273: a teacher changes their own password (the same /api/change-password the game uses; needs the current one)
+document.getElementById("btn-change-my-password").onclick = async () => {
+  setError("my-pw-error", "");
+  document.getElementById("my-pw-success").classList.add("hidden");
+  const cur = document.getElementById("my-pw-current").value;
+  const pw = document.getElementById("my-pw-new").value;
+  const again = document.getElementById("my-pw-confirm").value;
+  if (!cur) return setError("my-pw-error", "Enter your current password");
+  if (pw.length < 4) return setError("my-pw-error", "Your new password needs at least 4 characters");
+  if (pw !== again) return setError("my-pw-error", "The two new passwords don't match");
+  try {
+    await api("POST", "/api/change-password", { current_password: cur, new_password: pw });
+    ["my-pw-current", "my-pw-new", "my-pw-confirm"].forEach(id => { document.getElementById(id).value = ""; });
+    const ok = document.getElementById("my-pw-success");
+    ok.textContent = "Password changed.";
+    ok.classList.remove("hidden");
+  } catch (e) {
+    setError("my-pw-error", e.message);
+  }
+};
+
+
+document.getElementById("btn-admin-reset").onclick = async () => {
+  setError("admin-reset-error", "");
+  document.getElementById("admin-reset-success").classList.add("hidden");
+  const username = document.getElementById("admin-reset-username").value.trim();
+  const pw = document.getElementById("admin-reset-password").value;
+  if (!username) return setError("admin-reset-error", "Enter their username");
+  if (pw.length < 4) return setError("admin-reset-error", "Enter at least 4 characters");
+  if (!confirm(`Reset the password for "${username}"? Make sure you can tell them the new one.`)) return;
+  try {
+    await api("POST", "/api/admin/reset-password", { username, new_password: pw });
+    document.getElementById("admin-reset-username").value = "";
+    document.getElementById("admin-reset-password").value = "";
+    const successEl = document.getElementById("admin-reset-success");
+    successEl.textContent = "Password reset - tell them the new password.";
+    successEl.classList.remove("hidden");
+  } catch (e) {
+    setError("admin-reset-error", e.message);
+  }
+};
+
+// ---- admin account list (search + role filter + generate-password) ----
+let adminAccountRole = "";
+let adminAccountInactive = false;
+const adminSelected = new Set();   // account ids ticked for bulk delete
+let adminShownAccounts = [];
+let adminAccountSearchTimer = null;
+
+document.querySelectorAll("#admin-account-tabs button").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll("#admin-account-tabs button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    adminAccountRole = btn.dataset.role;
+    adminAccountInactive = btn.dataset.inactive === "1";
+    adminSelected.clear();
+    refreshAdminAccounts();
+  };
+});
+
+document.getElementById("admin-account-search").addEventListener("input", () => {
+  clearTimeout(adminAccountSearchTimer);
+  adminAccountSearchTimer = setTimeout(refreshAdminAccounts, 200);
+});
+
+async function refreshAdminAccounts() {
+  setError("admin-accounts-error", "");
+  const q = document.getElementById("admin-account-search").value.trim();
+  const params = new URLSearchParams();
+  if (adminAccountRole) params.set("role", adminAccountRole);
+  if (adminAccountInactive) params.set("inactive", "1");
+  if (q) params.set("q", q);
+  try {
+    const data = await api("GET", "/api/admin/accounts?" + params.toString());
+    const tbody = document.getElementById("admin-accounts-tbody");
+    tbody.innerHTML = "";
+    document.getElementById("admin-tab-inactive").textContent = "Inactive " + data.inactive_days + "+ days (" + data.inactive_total + ")";
+    adminShownAccounts = data.accounts;
+    // forget ticks for accounts no longer shown
+    [...adminSelected].forEach(id => { if (!data.accounts.some(a => a.id === id)) adminSelected.delete(id); });
+    updateBulkBar();
+    if (data.accounts.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='6'><em>No accounts match.</em></td></tr>";
+      return;
+    }
+    data.accounts.forEach(acc => {
+      const tr = document.createElement("tr");
+      const tdPick = document.createElement("td");
+      if (!acc.is_admin && !isTestAccountName(acc.username)) {
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = adminSelected.has(acc.id);
+        cb.onchange = () => { if (cb.checked) adminSelected.add(acc.id); else adminSelected.delete(acc.id); updateBulkBar(); };
+        tdPick.appendChild(cb);
+      }
+      const tdSeen = document.createElement("td");
+      tdSeen.textContent = fmtAgo(acc.last_active);
+      if (acc.inactive) {
+        const tag = document.createElement("span");
+        tag.textContent = " inactive";
+        tag.style.cssText = "color:#fff; background:var(--danger, #c0392b); font-size:11px; padding:1px 6px; border-radius:8px; margin-left:6px";
+        tdSeen.appendChild(tag);
+      }
+      const tdPlay = document.createElement("td");
+      tdPlay.textContent = fmtDuration(acc.secs_total);
+      const typeLabel = acc.is_admin ? "Admin" : (acc.role === "teacher" ? "Teacher" : "Student");
+      const genBtn = document.createElement("button");
+      genBtn.className = "secondary";
+      genBtn.textContent = "Generate new password";
+      genBtn.onclick = () => generateAccountPassword(acc.username);
+      const tdUser = document.createElement("td");
+      tdUser.textContent = acc.username;
+      const tdType = document.createElement("td");
+      tdType.textContent = typeLabel;
+      const tdAction = document.createElement("td");
+      tdAction.appendChild(genBtn);
+      // Delete (admin accounts can't be deleted - the server refuses too).
+      if (!acc.is_admin) {
+        const delBtn = document.createElement("button");
+        delBtn.className = "danger";
+        delBtn.style.marginLeft = "8px";
+        delBtn.textContent = "Delete";
+        delBtn.onclick = () => deleteAccount(acc);
+        tdAction.appendChild(delBtn);
+      }
+      tr.append(tdPick, tdUser, tdType, tdSeen, tdPlay, tdAction);
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    setError("admin-accounts-error", e.message);
+  }
+}
+
+async function generateAccountPassword(accUsername) {
+  if (!confirm(`Generate a new password for "${accUsername}"? Their old one stops working immediately.`)) return;
+  try {
+    const data = await api("POST", "/api/admin/reset-password", { username: accUsername });
+    const successEl = document.getElementById("admin-generate-success");
+    successEl.textContent = `New password for ${accUsername}: ${data.new_password}  (write this down - it won't be shown again)`;
+    successEl.classList.remove("hidden");
+  } catch (e) {
+    setError("admin-accounts-error", e.message);
+  }
+}
+
+// Permanent. Makes you type the username back so a mis-click on the wrong row can't delete anyone;
+// a teacher account also removes their classes and question sets (the warning says so).
+// Milestone 274: bulk delete of accounts flagged inactive (the server re-checks each one and skips anything protected)
+function isTestAccountName(name) { return ["test", "mrlooms"].includes(String(name).toLowerCase()); }
+
+function updateBulkBar() {
+  const bar = document.getElementById("admin-bulk-bar");
+  bar.classList.toggle("hidden", !adminAccountInactive && adminSelected.size === 0);
+  document.getElementById("admin-bulk-count").textContent = adminSelected.size + " selected";
+  document.getElementById("btn-bulk-delete").disabled = adminSelected.size === 0;
+}
+
+document.getElementById("btn-bulk-select-all").onclick = () => {
+  adminShownAccounts.forEach(a => { if (!a.is_admin && !isTestAccountName(a.username)) adminSelected.add(a.id); });
+  document.querySelectorAll("#admin-accounts-tbody input[type=checkbox]").forEach(cb => { cb.checked = true; });
+  updateBulkBar();
+};
+
+document.getElementById("btn-bulk-delete").onclick = async () => {
+  setError("admin-accounts-error", "");
+  const picked = adminShownAccounts.filter(a => adminSelected.has(a.id));
+  if (picked.length === 0) return;
+  const teachers = picked.filter(a => a.role === "teacher").length;
+  const notInactive = picked.filter(a => !a.inactive).length;
+  let msg = `Permanently delete ${picked.length} account${picked.length === 1 ? "" : "s"} and all their characters, progress and history? This cannot be undone.`;
+  if (teachers > 0) msg += `\n\n${teachers} of them ${teachers === 1 ? "is a TEACHER account" : "are TEACHER accounts"}: their classes, question sets and questions are deleted too.`;
+  if (notInactive > 0) msg += `\n\n${notInactive} ${notInactive === 1 ? "is" : "are"} not flagged inactive - the server will skip ${notInactive === 1 ? "it" : "them"}.`;
+  msg += "\n\nFirst few: " + picked.slice(0, 8).map(a => a.username).join(", ") + (picked.length > 8 ? ", ..." : "");
+  msg += "\n\nType DELETE to confirm:";
+  const typed = prompt(msg);
+  if (typed === null) return;
+  if (typed.trim() !== "DELETE") return setError("admin-accounts-error", "That wasn't DELETE - nothing was deleted.");
+  try {
+    const res = await api("POST", "/api/admin/accounts/delete-inactive", { ids: picked.map(a => a.id), confirm: "DELETE" });
+    adminSelected.clear();
+    const successEl = document.getElementById("admin-generate-success");
+    successEl.textContent = "Deleted " + res.deleted.length + " account" + (res.deleted.length === 1 ? "" : "s") + "." +
+      (res.skipped.length ? " Skipped " + res.skipped.length + ": " + res.skipped.map(x => x.username + " (" + x.reason + ")").join(", ") : "");
+    successEl.classList.remove("hidden");
+    refreshAdminAccounts();
+  } catch (e) {
+    setError("admin-accounts-error", e.message);
+  }
+};
+
+async function deleteAccount(acc) {
+  const extra = acc.role === "teacher"
+    ? "\n\nThis is a TEACHER account: their classes, question sets and questions are deleted too, and their students are removed from those classes."
+    : "";
+  const typed = prompt(`Permanently delete "${acc.username}" and their character, progress and history? This cannot be undone.${extra}\n\nType the username to confirm:`);
+  if (typed === null) return;
+  if (typed.trim().toLowerCase() !== acc.username.toLowerCase()) {
+    return setError("admin-accounts-error", "Username didn't match - nothing was deleted.");
+  }
+  try {
+    await api("DELETE", `/api/admin/accounts/${acc.id}`, { confirm_username: typed.trim() });
+    const successEl = document.getElementById("admin-generate-success");
+    successEl.textContent = `Deleted account ${acc.username}.`;
+    successEl.classList.remove("hidden");
+    refreshAdminAccounts();
+  } catch (e) {
+    setError("admin-accounts-error", e.message);
+  }
+}
+
+
+// ---- boot ----
+if (token) {
+  enterAdmin().catch(() => { logout(); });
+} else {
+  show("view-auth");
+}
+</script>
+</body>
+</html>

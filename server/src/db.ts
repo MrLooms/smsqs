@@ -189,7 +189,7 @@ export async function initDb() {
     await pool.query("UPDATE users SET username = $1 WHERE id = $2", [to, old.rows[0].id]);
     console.log("[db] renamed account " + from + " -> " + to);
   }
-  await pool.query("UPDATE users SET is_admin = true WHERE LOWER(username) = 'admin' AND role = 'teacher'");
+  await pool.query("UPDATE users SET is_admin = true WHERE LOWER(username) = 'admin' AND role IN ('teacher', 'admin')");
   // Milestone 274: playtime / session tracking and how long each question took (see activity.ts)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS play_sessions (

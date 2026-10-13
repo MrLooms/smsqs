@@ -5,6 +5,7 @@
 
 import { dbAll } from "./db";
 import { LAST_ACTIVE_SQL } from "./activity";
+import { parseTutorial, CHECKLIST_ITEMS, FEATURE_TOURS } from "./tutorial";
 
 export const T = {
   MIN_ATTEMPTS: 10,        // answers before a student can be called "struggling"
@@ -243,41 +244,42 @@ export async function studentInsights(classId: number, studentId: number) {
 }
 
 // Milestone 304: the Activity tab - who played on which days (last 14), how long and how often, and where the class spends its time.
-export async function classActivity(classId: number) {
+export async function classActivity(classId: number | number[]) {
+  const ids = Array.isArray(classId) ? classId : [classId]; // Milestone 361: a list of classes (the admin's "all classes")
   const days = (await dbAll<{ day: string }>(
     "SELECT to_char(CURRENT_DATE - g, 'YYYY-MM-DD') AS day FROM generate_series(0, 13) g ORDER BY g DESC"
   )).map((r) => r.day);
   const roster = await dbAll<{ student_id: number; username: string }>(
-    "SELECT u.id AS student_id, u.username FROM class_members m JOIN users u ON u.id = m.student_id WHERE m.class_id = ? ORDER BY u.username ASC",
-    [classId]
+    "SELECT DISTINCT u.id AS student_id, u.username FROM class_members m JOIN users u ON u.id = m.student_id WHERE m.class_id = ANY(?::int[]) ORDER BY u.username ASC",
+    [ids]
   );
   const perDay = await dbAll<{ student_id: number; day: string; seconds: number }>(
     `SELECT pa.user_id AS student_id, to_char(pa.day, 'YYYY-MM-DD') AS day, SUM(pa.seconds)::int AS seconds
      FROM play_activity pa
-     WHERE pa.user_id IN (SELECT student_id FROM class_members WHERE class_id = ?) AND pa.day >= CURRENT_DATE - 13
+     WHERE pa.user_id IN (SELECT student_id FROM class_members WHERE class_id = ANY(?::int[])) AND pa.day >= CURRENT_DATE - 13
      GROUP BY 1, 2`,
-    [classId]
+    [ids]
   );
   const sessions = await dbAll<{ student_id: number; sessions: number; active_seconds: number }>(
     `SELECT p.user_id AS student_id, COUNT(*)::int AS sessions, COALESCE(SUM(p.active_seconds), 0)::int AS active_seconds
      FROM play_sessions p
-     WHERE p.user_id IN (SELECT student_id FROM class_members WHERE class_id = ?) AND p.started_at >= now() - interval '14 days'
+     WHERE p.user_id IN (SELECT student_id FROM class_members WHERE class_id = ANY(?::int[])) AND p.started_at >= now() - interval '14 days'
      GROUP BY 1`,
-    [classId]
+    [ids]
   );
   const areas = await dbAll<{ area: string; seconds: number }>(
     `SELECT pa.area, SUM(pa.seconds)::int AS seconds
      FROM play_activity pa
-     WHERE pa.user_id IN (SELECT student_id FROM class_members WHERE class_id = ?) AND pa.day >= CURRENT_DATE - 13
+     WHERE pa.user_id IN (SELECT student_id FROM class_members WHERE class_id = ANY(?::int[])) AND pa.day >= CURRENT_DATE - 13
      GROUP BY 1 ORDER BY 2 DESC`,
-    [classId]
+    [ids]
   );
   const answers = await dbAll<{ day: string; answers: number }>(
     `SELECT to_char(qa.attempted_at::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS answers
      FROM question_attempts qa
-     WHERE qa.class_id = ? AND qa.attempted_at >= CURRENT_DATE - 13
+     WHERE qa.class_id = ANY(?::int[]) AND qa.attempted_at >= CURRENT_DATE - 13
      GROUP BY 1`,
-    [classId]
+    [ids]
   );
 
   const byStudent = new Map<number, Record<string, number>>();
@@ -325,17 +327,19 @@ export function progressStage(bossKills: Record<string, number>, endlessBest: nu
   return endlessBest > 0 ? "Endless Dungeon" : "All four bosses beaten";
 }
 
-export async function classProgress(classId: number) {
+export async function classProgress(classId: number | number[]) {
+  const ids = Array.isArray(classId) ? classId : [classId]; // Milestone 361: a list of classes (the admin's "all classes")
   const rows = await dbAll<any>(
     `SELECT u.id AS student_id, u.username, u.endless_best, c.level, c.xp, c.inventory_json, c.lorekin_json, c.house_json,
        (SELECT COUNT(*)::int FROM dungeon_runs d WHERE d.user_id = u.id) AS runs_total,
        (SELECT COUNT(*)::int FROM dungeon_runs d WHERE d.user_id = u.id AND d.completed_at >= now() - interval '14 days') AS runs_14d,
        (SELECT MAX(d.completed_at) FROM dungeon_runs d WHERE d.user_id = u.id) AS last_run
      FROM class_members m JOIN users u ON u.id = m.student_id LEFT JOIN characters c ON c.user_id = u.id
-     WHERE m.class_id = ? ORDER BY u.username ASC`,
-    [classId]
+     WHERE m.class_id = ANY(?::int[]) ORDER BY u.username ASC`,
+    [ids]
   );
-  const students = rows.map((r) => {
+  const seenIds = new Set<number>(); // a student in two of the classes appears once
+  const students = rows.filter((r: any) => !seenIds.has(r.student_id) && !!seenIds.add(r.student_id)).map((r: any) => {
     let bossKills: Record<string, number> = {};
     let tier = 0;
     try {
@@ -379,47 +383,48 @@ export async function classProgress(classId: number) {
 
 // Milestone 307: the event log rolled up for a class (last 14 days) - where students die, how dungeon runs go, which menus get used,
 // gold, level pace, and where sessions end. Everything is a plain count so it can be read at a glance.
-export async function classEvents(classId: number) {
-  const inClass = "user_id IN (SELECT student_id FROM class_members WHERE class_id = ?)";
-  const since = await dbAll<{ first: string | null }>(`SELECT MIN(at) AS first FROM game_events WHERE ${inClass}`, [classId]);
+export async function classEvents(classId: number | number[]) {
+  const ids = Array.isArray(classId) ? classId : [classId]; // Milestone 361: a list of classes (the admin's "all classes")
+  const inClass = "user_id IN (SELECT student_id FROM class_members WHERE class_id = ANY(?::int[]))";
+  const since = await dbAll<{ first: string | null }>(`SELECT MIN(at) AS first FROM game_events WHERE ${inClass}`, [ids]);
   const deaths = await dbAll<{ place: string; deaths: number; students: number }>(
     `SELECT detail AS place, SUM(n)::int AS deaths, COUNT(DISTINCT user_id)::int AS students
      FROM game_events WHERE kind = 'death' AND at >= now() - interval '14 days' AND ${inClass}
      GROUP BY detail ORDER BY 2 DESC LIMIT 12`,
-    [classId]
+    [ids]
   );
   const dungeon = await dbAll<{ kind: string; biome: string; total: number; students: number }>(
     `SELECT kind, detail AS biome, SUM(n)::int AS total, COUNT(DISTINCT user_id)::int AS students
      FROM game_events WHERE kind IN ('dungeon_in', 'dungeon_out', 'boss') AND at >= now() - interval '14 days' AND ${inClass}
      GROUP BY kind, detail`,
-    [classId]
+    [ids]
   );
   const panels = await dbAll<{ feature: string; uses: number; students: number }>(
     `SELECT detail AS feature, SUM(n)::int AS uses, COUNT(DISTINCT user_id)::int AS students
      FROM game_events WHERE kind = 'panel' AND at >= now() - interval '14 days' AND ${inClass}
      GROUP BY detail ORDER BY 3 DESC, 2 DESC`,
-    [classId]
+    [ids]
   );
   const per = await dbAll<{ user_id: number; kind: string; total: number }>(
     `SELECT user_id, kind, SUM(n)::int AS total
      FROM game_events WHERE at >= now() - interval '14 days' AND ${inClass} GROUP BY user_id, kind`,
-    [classId]
+    [ids]
   );
   const levels = await dbAll<{ user_id: number; top: number | null }>(
     `SELECT user_id, MAX(CASE WHEN detail ~ '^[0-9]+$' THEN detail::int END) AS top
      FROM game_events WHERE kind = 'level' AND at >= now() - interval '14 days' AND ${inClass} GROUP BY user_id`,
-    [classId]
+    [ids]
   );
   const roster = await dbAll<{ student_id: number; username: string }>(
-    "SELECT u.id AS student_id, u.username FROM class_members m JOIN users u ON u.id = m.student_id WHERE m.class_id = ? ORDER BY u.username ASC",
-    [classId]
+    "SELECT DISTINCT u.id AS student_id, u.username FROM class_members m JOIN users u ON u.id = m.student_id WHERE m.class_id = ANY(?::int[]) ORDER BY u.username ASC",
+    [ids]
   );
   const quits = await dbAll<{ place: string; sessions: number; students: number }>(
     `SELECT COALESCE(last_place, '') AS place, COUNT(*)::int AS sessions, COUNT(DISTINCT user_id)::int AS students
      FROM play_sessions
      WHERE ${inClass} AND started_at >= now() - interval '14 days' AND last_seen < now() - interval '5 minutes' AND active_seconds >= 60
      GROUP BY 1 ORDER BY 2 DESC LIMIT 12`,
-    [classId]
+    [ids]
   );
 
   const byUser = new Map<number, Record<string, number>>();
@@ -445,7 +450,7 @@ export async function classEvents(classId: number) {
     `SELECT to_char(at::date, 'YYYY-MM-DD') AS day,
        COALESCE(SUM(n) FILTER (WHERE kind = 'gold_in'), 0)::int AS gold_in, COALESCE(SUM(n) FILTER (WHERE kind = 'gold_out'), 0)::int AS gold_out
      FROM game_events WHERE kind IN ('gold_in', 'gold_out') AND at >= CURRENT_DATE - 13 AND ${inClass} GROUP BY 1 ORDER BY 1`,
-    [classId]
+    [ids]
   );
   // a place where several students keep dying is worth a look (too hard? too crowded? a bug?)
   const hotspots = deaths.filter((d) => d.students >= 3 && d.deaths >= 8);
@@ -480,4 +485,40 @@ export async function studentEvents(studentId: number) {
   );
   const since = await dbAll<{ first: string | null }>("SELECT MIN(at) AS first FROM game_events WHERE user_id = ?", [studentId]);
   return { since: since[0]?.first ?? null, deaths, gold_days, counts, panels, recent };
+}
+
+// Milestone 297/306 (moved here in Milestone 361 for the admin page): Basic Training progress per student and, for the whole scope, how many
+// reached each step; the Getting Started checklist and the feature tours. Scope = one class id or a list of class ids.
+export async function classTutorial(classId: number | number[]) {
+  const ids = Array.isArray(classId) ? classId : [classId];
+  const rows = await dbAll<{ student_id: number; username: string; tutorial_json: string | null }>(
+    `SELECT DISTINCT ON (u.id) u.id AS student_id, u.username, c.tutorial_json
+     FROM class_members m JOIN users u ON u.id = m.student_id LEFT JOIN characters c ON c.user_id = u.id
+     WHERE m.class_id = ANY(?::int[]) ORDER BY u.id`,
+    [ids]
+  );
+  rows.sort((x, y) => x.username.localeCompare(y.username));
+  const students = rows.map((r) => {
+    const st = parseTutorial(r.tutorial_json);
+    const doneAt = st.done["basic"];
+    return {
+      student_id: r.student_id,
+      username: r.username,
+      status: doneAt ? (doneAt <= 1 ? "existing" : (st.skipped["basic"] ? "skipped" : "done")) : (st.step["basic"] ? "in_progress" : "not_started"),
+      step: st.step["basic"] ?? null,
+      checklist: {
+        legacy: st.done["basic"] === 1 && !st.done["checklist"],
+        done: !!st.done["checklist"] && st.done["checklist"] !== 1,
+        ticked: (st.ticks["checklist"] ?? []).filter((i) => CHECKLIST_ITEMS.includes(i)),
+      },
+      tours: FEATURE_TOURS.filter((tt) => st.done[tt]),
+    };
+  });
+  const steps = await dbAll<{ step: string; students: number }>(
+    `SELECT e.step, COUNT(DISTINCT e.user_id)::int AS students
+     FROM tutorial_events e JOIN class_members m ON m.student_id = e.user_id
+     WHERE m.class_id = ANY(?::int[]) AND e.tut = 'basic' AND e.kind = 'step' GROUP BY e.step`,
+    [ids]
+  );
+  return { students, steps, checklist_items: CHECKLIST_ITEMS, tour_ids: FEATURE_TOURS };
 }

@@ -9,13 +9,13 @@ export function generateToken(): string {
 
 export interface AuthedRequest extends Request {
   userId?: number;
-  role?: "teacher" | "student";
+  role?: "teacher" | "student" | "admin";
   isAdmin?: boolean;
 }
 
 export interface ResolvedSession {
   userId: number;
-  role: "teacher" | "student";
+  role: "teacher" | "student" | "admin";
   username: string;
   isAdmin: boolean;
 }
@@ -55,7 +55,7 @@ export const requireAuth = ah(async (req: AuthedRequest, res: Response, next: Ne
 });
 
 // Use after requireAuth: requireRole("teacher") / requireRole("student").
-export function requireRole(role: "teacher" | "student") {
+export function requireRole(role: "teacher" | "student" | "admin") {
   return (req: AuthedRequest, res: Response, next: NextFunction) => {
     if (req.role !== role) {
       return res.status(403).json({ error: `This action requires a ${role} account` });
@@ -64,6 +64,9 @@ export function requireRole(role: "teacher" | "student") {
   };
 }
 
+// Milestone 361: the admin is its own role now (users.role = 'admin', no classes and no teacher features - it has its own page, admin.html, and
+// its own routes, routes/admin.ts). Until the teaching classes have been moved to the real teacher account (adminSplit.ts) it is still a
+// 'teacher' row with is_admin set, so this checks the flag, not the role.
 // Milestone 171: the designated admin account (users.is_admin, set for "admin", formerly "tester" - see db.ts)
 // bypasses every per-teacher class-ownership scope. Used for cross-class/cross-teacher fixes a
 // regular teacher shouldn't be able to reach into (e.g. resetting ANY account's password, not

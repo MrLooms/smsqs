@@ -15,6 +15,8 @@ import { parseHouse, houseToClient } from "./house";
 import { parseTutorial, tutorialToClient } from "./tutorial";
 import { parseDiscovery, discoveryToClient } from "./discovery";
 import teacherRouter from "./routes/teacher";
+import adminRouter from "./routes/admin";
+import { migrateAdminToTeacher } from "./adminSplit";
 import studentRouter from "./routes/student";
 import { attachMultiplayer } from "./ws";
 
@@ -35,6 +37,7 @@ app.get("/healthz", ah(async (_req, res) => {
 }));
 
 app.use("/api/teacher", teacherRouter);
+app.use("/api/admin", adminRouter); // Milestone 361
 app.use("/api", studentRouter);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
@@ -297,6 +300,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 
 async function main() {
   await initDb();
+  await migrateAdminToTeacher().catch((e) => console.error("[admin] migration failed:", e)); // Milestone 361: move the admin's classes once the teacher account exists
 
   const server = app.listen(PORT, () => {
     console.log(`SMS Quest server listening on http://localhost:${PORT}`);
