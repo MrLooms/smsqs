@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { presentQuestionRow } from "../questionTypes";
 import { dbGet, dbAll, dbRun, withTransaction } from "../db";
 import { isUsernameAllowed } from "../usernameFilter";
 import { isTestName } from "../testAccount";
@@ -134,12 +135,13 @@ router.get("/my-questions", requireAuth, requireRole("student"), ah(async (req: 
     [activeClassId]
   );
 
-  const questions = rows.map((r) => ({
+  // Milestone 362: a game build that does not know the self-grading question types (no ?rich=1) never gets them
+  const wantsRich = req.query.rich === "1";
+  const questions = rows.filter((r) => wantsRich || r.question_type === "mc" || r.question_type === "tf").map((r) => ({
     id: String(r.id),
     question_type: r.question_type,
     prompt: r.prompt,
-    answers: JSON.parse(r.answers_json),
-    correct_index: r.correct_index,
+    ...presentQuestionRow(r), // answers + correct_index (mc/tf) or data (the self-grading types, Milestone 362)
     explanation: r.explanation ?? "",
     difficulty: r.difficulty,
     topic: r.topic ?? "",

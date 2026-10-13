@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { dbGet, dbAll, dbRun, dbInsertId, withTransaction } from "../db";
 import { migrateAdminToTeacher } from "../adminSplit";
+import { ALL_TYPES, CHOICE_TYPES, normalizeQuestion, presentQuestionRow, dataFromCsv } from "../questionTypes";
 import { LAST_ACTIVE_SQL } from "../activity";
 import { generateToken, requireAuth, requireRole, AuthedRequest } from "../auth";
 import { ah } from "../asyncHandler";
@@ -492,8 +493,7 @@ router.get("/question-sets/:id", ah(async (req: AuthedRequest, res) => {
     id: r.id,
     question_type: r.question_type,
     prompt: r.prompt,
-    answers: JSON.parse(r.answers_json),
-    correct_index: r.correct_index,
+    ...presentQuestionRow(r), // answers + correct_index (mc/tf) or data (the self-grading types, Milestone 362)
     explanation: r.explanation,
     difficulty: r.difficulty,
     topic: r.topic,
@@ -528,8 +528,8 @@ router.delete("/question-sets/:id", ah(async (req: AuthedRequest, res) => {
   res.json({ ok: true });
 }));
 
-const CSV_REQUIRED_COLUMNS = ["question_type", "prompt", "answer_1", "answer_2", "correct_index"];
-const CSV_OPTIONAL_COLUMNS = ["answer_3", "answer_4", "explanation", "difficulty", "topic", "tags"];
+const CSV_REQUIRED_COLUMNS = ["question_type", "prompt"];
+const CSV_OPTIONAL_COLUMNS = ["answer_1", "answer_2", "answer_3", "answer_4", "correct_index", "data", "explanation", "difficulty", "topic", "tags"];
 
 // Teacher-vetted content lands straight in as real questions - no draft/
 // review step, unlike an AI-generation path would need. The teacher
@@ -567,7 +567,7 @@ router.post("/question-sets/:id/import-csv", ah(async (req: AuthedRequest, res) 
   type ParsedQuestion = {
     question_type: string;
     prompt: string;
-    answers: string[];
+    answers_json: string;
     correct_index: number;
     explanation: string;
     difficulty: number;
@@ -582,8 +582,8 @@ router.post("/question-sets/:id/import-csv", ah(async (req: AuthedRequest, res) 
     if (r.every((cell) => cell.trim() === "")) return; // skip blank lines
 
     const question_type = (get(r, "question_type") || "mc").toLowerCase();
-    if (question_type !== "mc" && question_type !== "tf") {
-      rowErrors.push({ row: rowNum, error: `question_type must be 'mc' or 'tf', got '${question_type}'` });
+    if (!ALL_TYPES.includes(question_type)) {
+      rowErrors.push({ row: rowNum, error: `question_type must be one of ${ALL_TYPES.join(", ")}, got '${question_type}'` });
       return;
     }
 
@@ -593,19 +593,36 @@ router.post("/question-sets/:id/import-csv", ah(async (req: AuthedRequest, res) 
       return;
     }
 
-    const answers =
-      question_type === "tf"
-        ? ["True", "False"]
-        : [get(r, "answer_1"), get(r, "answer_2"), get(r, "answer_3"), get(r, "answer_4")].filter((a) => a !== "");
-    if (answers.length < 2) {
-      rowErrors.push({ row: rowNum, error: "mc questions need at least 2 answers" });
-      return;
-    }
-
-    const correct_index = Number(get(r, "correct_index"));
-    if (!Number.isInteger(correct_index) || correct_index < 0 || correct_index >= answers.length) {
-      rowErrors.push({ row: rowNum, error: `correct_index must be a whole number from 0 to ${answers.length - 1}` });
-      return;
+    let answers_json = "";
+    let correct_index = 0;
+    if (CHOICE_TYPES.includes(question_type)) {
+      const answers =
+        question_type === "tf"
+          ? ["True", "False"]
+          : [get(r, "answer_1"), get(r, "answer_2"), get(r, "answer_3"), get(r, "answer_4")].filter((a) => a !== "");
+      if (answers.length < 2) {
+        rowErrors.push({ row: rowNum, error: "mc questions need at least 2 answers" });
+        return;
+      }
+      correct_index = Number(get(r, "correct_index"));
+      if (!Number.isInteger(correct_index) || correct_index < 0 || correct_index >= answers.length) {
+        rowErrors.push({ row: rowNum, error: `correct_index must be a whole number from 0 to ${answers.length - 1}` });
+        return;
+      }
+      answers_json = JSON.stringify(answers);
+    } else {
+      // Milestone 362: the self-grading types read their compact `data` column (see questionTypes.ts for each type's syntax)
+      const fromCsv = dataFromCsv(question_type, get(r, "data"), [get(r, "answer_1"), get(r, "answer_2"), get(r, "answer_3"), get(r, "answer_4")]);
+      if ("error" in fromCsv) {
+        rowErrors.push({ row: rowNum, error: fromCsv.error });
+        return;
+      }
+      const norm = normalizeQuestion({ question_type, prompt, data: fromCsv.data });
+      if (!norm.ok) {
+        rowErrors.push({ row: rowNum, error: norm.error });
+        return;
+      }
+      answers_json = norm.value.answers_json;
     }
 
     const difficultyRaw = get(r, "difficulty");
@@ -622,7 +639,7 @@ router.post("/question-sets/:id/import-csv", ah(async (req: AuthedRequest, res) 
     parsed.push({
       question_type,
       prompt,
-      answers,
+      answers_json,
       correct_index,
       explanation: get(r, "explanation"),
       difficulty,
@@ -647,7 +664,7 @@ router.post("/question-sets/:id/import-csv", ah(async (req: AuthedRequest, res) 
           setId,
           q.question_type,
           q.prompt,
-          JSON.stringify(q.answers),
+          q.answers_json,
           q.correct_index,
           q.explanation,
           q.difficulty,
@@ -661,38 +678,25 @@ router.post("/question-sets/:id/import-csv", ah(async (req: AuthedRequest, res) 
   res.status(201).json({ imported: parsed.length });
 }));
 
-function validateQuestionBody(body: any): string | null {
-  if (typeof body.prompt !== "string" || body.prompt.trim().length === 0) return "Prompt is required";
-  if (!Array.isArray(body.answers) || body.answers.length < 2) return "At least 2 answers are required";
-  if (
-    typeof body.correct_index !== "number" ||
-    body.correct_index < 0 ||
-    body.correct_index >= body.answers.length
-  ) {
-    return "correct_index must point at one of the answers";
-  }
-  return null;
-}
-
 router.post("/question-sets/:id/questions", ah(async (req: AuthedRequest, res) => {
   const setId = Number(req.params.id);
   const set = await dbGet("SELECT id FROM question_sets WHERE id = ? AND teacher_id = ?", [setId, req.userId!]);
   if (!set) return res.status(404).json({ error: "Question set not found" });
 
-  const error = validateQuestionBody(req.body ?? {});
-  if (error) return res.status(400).json({ error });
+  const norm = normalizeQuestion(req.body ?? {});
+  if (!norm.ok) return res.status(400).json({ error: norm.error });
 
-  const { question_type, prompt, answers, correct_index, explanation, difficulty, topic, tags } = req.body;
+  const { prompt, explanation, difficulty, topic, tags } = req.body;
 
   const id = await dbInsertId(
     `INSERT INTO questions (question_set_id, question_type, prompt, answers_json, correct_index, explanation, difficulty, topic, tags_json)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       setId,
-      question_type ?? "mc",
+      norm.value.question_type,
       prompt.trim(),
-      JSON.stringify(answers),
-      correct_index,
+      norm.value.answers_json,
+      norm.value.correct_index,
       explanation ?? "",
       difficulty ?? 1,
       topic ?? "",
@@ -713,19 +717,19 @@ router.put("/questions/:id", ah(async (req: AuthedRequest, res) => {
   );
   if (!owns) return res.status(404).json({ error: "Question not found" });
 
-  const error = validateQuestionBody(req.body ?? {});
-  if (error) return res.status(400).json({ error });
+  const norm = normalizeQuestion(req.body ?? {});
+  if (!norm.ok) return res.status(400).json({ error: norm.error });
 
-  const { question_type, prompt, answers, correct_index, explanation, difficulty, topic, tags } = req.body;
+  const { prompt, explanation, difficulty, topic, tags } = req.body;
 
   await dbRun(
     `UPDATE questions SET question_type = ?, prompt = ?, answers_json = ?, correct_index = ?,
        explanation = ?, difficulty = ?, topic = ?, tags_json = ? WHERE id = ?`,
     [
-      question_type ?? "mc",
+      norm.value.question_type,
       prompt.trim(),
-      JSON.stringify(answers),
-      correct_index,
+      norm.value.answers_json,
+      norm.value.correct_index,
       explanation ?? "",
       difficulty ?? 1,
       topic ?? "",

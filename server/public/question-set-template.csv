@@ -1,4 +1,13 @@
-question_type,prompt,answer_1,answer_2,answer_3,answer_4,correct_index,explanation,difficulty,topic,tags
-mc,What is the capital of Canada?,Toronto,Vancouver,Ottawa,Montreal,2,Ottawa is Canada's capital city.,1,Geography,canada;capitals
-tf,The Great Lakes are located in North America.,True,False,,,0,The Great Lakes border Canada and the United States.,1,Geography,lakes
-mc,What is 7 x 8?,54,56,58,64,1,7 x 8 = 56.,1,Math,multiplication
+question_type,prompt,answer_1,answer_2,answer_3,answer_4,correct_index,data,explanation,difficulty,topic,tags
+mc,What is the capital of Canada?,Toronto,Vancouver,Ottawa,Montreal,2,,Ottawa is Canada's capital city.,1,Geography,canada;capitals
+tf,The Great Lakes are located in North America.,True,False,,,0,,The Great Lakes border Canada and the United States.,1,Geography,lakes
+mc,What is 7 x 8?,54,56,58,64,1,,7 x 8 = 56.,1,Math,multiplication
+match,Match each city to what it is the capital of.,,,,,,Ottawa=Canada|Toronto=Ontario|Victoria=British Columbia|Edmonton=Alberta,Each provincial capital is in its own province.,1,Geography,capitals
+order,Put the life cycle of a butterfly in order.,Earliest,Latest,,,,Egg|Caterpillar|Chrysalis|Butterfly,A butterfly goes through four stages.,1,Science,life cycles
+sort,Sort each job into the level of government that does it.,Federal,Provincial,Municipal,,,Defence=Federal|Health care=Provincial|Garbage pickup=Municipal|Currency=Federal|Libraries=Municipal,Governments share the work.,2,Social Studies,government
+multi,Which of these are prime numbers? (Select all that apply),,,,,,2*|4|7*|9|11*,A prime number has only two factors: 1 and itself.,2,Math,primes
+blank,Fill in the blanks.,,,,,,The [Ottawa] is the capital of [Canada].|Toronto|Quebec,Ottawa is the capital city.,1,Geography,capitals
+tap,Tap every noun in the sentence.,,,,,,The *dog* chased the *ball* across the *yard*.,Nouns name people / places / things.,1,Language Arts,nouns
+unscramble,Unscramble the letters: the largest planet.,,,,,,jupiter,Jupiter is the largest planet.,1,Science,space
+number,What is 7 x 8?,,,,,,56,7 x 8 = 56.,1,Math,multiplication
+number,Place the number on the line: halfway between 0 and 100.,,,,,,line 0 100 50~3,Half of 100 is 50.,1,Math,number line

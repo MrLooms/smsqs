@@ -360,8 +360,9 @@
   <p style="color:var(--muted); font-size:13px">
     <a class="link" href="/question-set-template.csv" download>Download the template</a> —
     fill it in (your own questions, or ones an AI wrote that you've already reviewed) and upload it below.
-    Columns: question_type (mc/tf), prompt, answer_1-4, correct_index (0-based), explanation,
-    difficulty (1-3), topic, tags (semicolon-separated). All-or-nothing — a bad row cancels the whole import.
+    Columns: question_type (mc, tf, match, order, sort, multi, blank, tap, unscramble, number), prompt, answer_1-4, correct_index (0-based, mc/tf),
+    data (the other types - see the template for each one's format), explanation, difficulty (1-3), topic, tags (semicolon-separated).
+    All-or-nothing — a bad row cancels the whole import.
   </p>
   <div class="row">
     <input type="file" id="csv-file-input" accept=".csv">
@@ -379,6 +380,14 @@
     <select id="q-type">
       <option value="mc">Multiple choice</option>
       <option value="tf">True / False</option>
+      <option value="match">Matching (drag each item to its partner)</option>
+      <option value="order">Ordering (put in sequence)</option>
+      <option value="sort">Sorting (drag into categories)</option>
+      <option value="multi">Select all that apply</option>
+      <option value="blank">Fill in the blanks (word bank)</option>
+      <option value="tap">Tap the words</option>
+      <option value="unscramble">Unscramble the letters</option>
+      <option value="number">Number (type it, or place it on a line)</option>
     </select>
   </div>
   <textarea id="q-prompt" placeholder="Question prompt"></textarea>
@@ -963,8 +972,129 @@ document.getElementById("btn-import-csv").onclick = () => {
   reader.readAsText(file);
 };
 
+// ---- the self-grading question types (Milestone 362) ----
+const RICH_TYPES = ["match", "order", "sort", "multi", "blank", "tap", "unscramble", "number"];
+const RICH_HELP = {
+  match: "One pair per line as <b>left = right</b> (2 to 6 pairs). The game shows the left side and shuffles the right side; the student drags each right item to its partner.",
+  order: "One item per line, in the <b>correct order</b> (3 to 7). The game shuffles them; the student puts them back in sequence.",
+  sort: "Name 2 or 3 categories, then one item per line as <b>item = category</b> (3 to 8 items, every category used).",
+  multi: "One option per line (3 to 6); put a <b>*</b> at the end of each correct one. The student ticks every correct option.",
+  blank: "Write the sentence and put each answer in <b>[square brackets]</b> (1 to 4). The word bank is the answers plus any extra words you add.",
+  tap: "Write the sentence and put <b>*asterisks*</b> around each word the student should tap (e.g. <i>The *quick* fox *jumps*</i>). The prompt tells them what to tap.",
+  unscramble: "The word to spell (3 to 12 letters). The prompt is the clue; the game scrambles the letters.",
+  number: "The accepted number(s), separated by commas. For a number line also give its range; the student places a marker within the tolerance.",
+};
+function qv(id) { return document.getElementById(id).value.trim(); }
+function qlines(id) { return document.getElementById(id).value.split("\n").map(s => s.trim()).filter(Boolean); }
+function renderRichInputs(type) {
+  const el = document.getElementById("q-answers");
+  const help = "<p class='hint'>" + RICH_HELP[type] + "</p>";
+  const ta = (id, rows, ph) => "<textarea id='" + id + "' rows='" + rows + "' placeholder='" + ph + "'></textarea>";
+  const inp = (id, ph, w) => "<input id='" + id + "' placeholder='" + ph + "' style='" + (w ? "width:" + w + "px" : "flex:1") + "'>";
+  let html = help;
+  if (type === "match") html += ta("rq-lines", 5, "Ottawa = Capital of Canada&#10;Toronto = Capital of Ontario&#10;Victoria = Capital of BC");
+  else if (type === "order") html += ta("rq-lines", 5, "Egg&#10;Caterpillar&#10;Chrysalis&#10;Butterfly") + "<div class='row' style='margin-top:8px'>" + inp("rq-start", "Top label (optional), e.g. Earliest", 240) + inp("rq-end", "Bottom label (optional), e.g. Latest", 240) + "</div>";
+  else if (type === "sort") html += "<div class='row'>" + inp("rq-b0", "Category 1", 160) + inp("rq-b1", "Category 2", 160) + inp("rq-b2", "Category 3 (optional)", 180) + "</div>" + ta("rq-lines", 6, "Defence = Federal&#10;Health = Provincial&#10;Garbage collection = Municipal");
+  else if (type === "multi") html += ta("rq-lines", 5, "Ottawa*&#10;Toronto&#10;Quebec City*&#10;Vancouver");
+  else if (type === "blank") html += ta("rq-text", 3, "The [Ottawa] is the capital of [Canada].") + "<div class='row' style='margin-top:8px'>" + inp("rq-extra", "Extra wrong words, separated by commas (optional)") + "</div>";
+  else if (type === "tap") html += ta("rq-text", 3, "The *quick* brown fox *jumps* over the lazy dog.");
+  else if (type === "unscramble") html += "<div class='row'>" + inp("rq-word", "The word, e.g. capital", 240) + "</div>";
+  else if (type === "number") html += "<div class='row'><select id='rq-mode'><option value='type'>Student types the number</option><option value='line'>Student places it on a number line</option></select>"
+    + inp("rq-answers", "Accepted number(s), e.g. 56  or  0.5, 1/2", 260) + inp("rq-tol", "Tolerance (optional)", 150) + "</div>"
+    + "<div class='row' id='rq-line-row' style='margin-top:8px'>" + inp("rq-min", "Line starts at", 130) + inp("rq-max", "Line ends at", 130) + "</div>";
+  el.innerHTML = html;
+  if (type === "number") {
+    const sync = () => document.getElementById("rq-line-row").classList.toggle("hidden", document.getElementById("rq-mode").value !== "line");
+    document.getElementById("rq-mode").onchange = sync;
+    sync();
+  }
+}
+
+// editor -> the data object the server validates
+function collectRich(type) {
+  switch (type) {
+    case "match":
+      return { pairs: qlines("rq-lines").map(l => { const i = l.indexOf("="); return i < 0 ? [l, ""] : [l.slice(0, i).trim(), l.slice(i + 1).trim()]; }) };
+    case "order":
+      return { items: qlines("rq-lines"), start_label: qv("rq-start"), end_label: qv("rq-end") };
+    case "sort": {
+      const buckets = ["rq-b0", "rq-b1", "rq-b2"].map(qv).filter(Boolean);
+      const items = qlines("rq-lines").map(l => {
+        const i = l.lastIndexOf("=");
+        const name = i < 0 ? "" : l.slice(i + 1).trim().toLowerCase();
+        return [i < 0 ? l : l.slice(0, i).trim(), buckets.findIndex(b => b.toLowerCase() === name)];
+      });
+      return { buckets, items };
+    }
+    case "multi": {
+      const options = [], correct = [];
+      qlines("rq-lines").forEach((l, i) => { if (l.endsWith("*")) { correct.push(i); options.push(l.slice(0, -1).trim()); } else options.push(l); });
+      return { options, correct };
+    }
+    case "blank":
+      return { text: qv("rq-text"), extra: qv("rq-extra").split(",").map(s => s.trim()).filter(Boolean) };
+    case "tap":
+      return { text: qv("rq-text") };
+    case "unscramble":
+      return { word: qv("rq-word") };
+    case "number": {
+      const mode = qv("rq-mode") === "line" ? "line" : "type";
+      const answers = qv("rq-answers").split(",").map(s => s.trim()).filter(Boolean).map(s => {
+        const m = /^(-?[\d.]+)\s*\/\s*([\d.]+)$/.exec(s);
+        return m ? Number(m[1]) / Number(m[2]) : Number(s);
+      });
+      const out = { mode, answers, tolerance: qv("rq-tol") === "" ? 0 : Number(qv("rq-tol")) };
+      if (mode === "line") { out.min = Number(qv("rq-min")); out.max = Number(qv("rq-max")); }
+      return out;
+    }
+  }
+  return {};
+}
+
+// the data object -> the editor fields
+function fillRich(type, d) {
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+  switch (type) {
+    case "match": set("rq-lines", d.pairs.map(p => p[0] + " = " + p[1]).join("\n")); break;
+    case "order": set("rq-lines", d.items.join("\n")); set("rq-start", d.start_label || ""); set("rq-end", d.end_label || ""); break;
+    case "sort":
+      d.buckets.forEach((b, i) => set("rq-b" + i, b));
+      set("rq-lines", d.items.map(p => p[0] + " = " + d.buckets[p[1]]).join("\n"));
+      break;
+    case "multi": set("rq-lines", d.options.map((o, i) => o + (d.correct.includes(i) ? "*" : "")).join("\n")); break;
+    case "blank": set("rq-text", d.text); set("rq-extra", (d.extra || []).join(", ")); break;
+    case "tap": set("rq-text", d.text); break;
+    case "unscramble": set("rq-word", d.word); break;
+    case "number":
+      set("rq-mode", d.mode); set("rq-answers", d.answers.join(", ")); set("rq-tol", d.tolerance || "");
+      if (d.mode === "line") { set("rq-min", d.min); set("rq-max", d.max); }
+      document.getElementById("rq-line-row").classList.toggle("hidden", d.mode !== "line");
+      break;
+  }
+}
+
+// one line summarising a question in the set's list
+function questionSummary(q) {
+  const d = q.data;
+  if (!d) return q.answers.map((a, i) => (i === q.correct_index ? "✓ " : "") + escapeHtml(a)).join(" &nbsp;|&nbsp; ");
+  const kind = { match: "Matching", order: "Ordering", sort: "Sorting", multi: "Select all", blank: "Word bank", tap: "Tap the words", unscramble: "Unscramble", number: "Number" }[q.question_type] || q.question_type;
+  let s = "";
+  switch (q.question_type) {
+    case "match": s = d.pairs.map(p => escapeHtml(p[0]) + " ↔ " + escapeHtml(p[1])).join(" &nbsp;|&nbsp; "); break;
+    case "order": s = d.items.map(escapeHtml).join(" → "); break;
+    case "sort": s = d.buckets.map((b, i) => "<b>" + escapeHtml(b) + "</b>: " + d.items.filter(p => p[1] === i).map(p => escapeHtml(p[0])).join(", ")).join(" &nbsp;|&nbsp; "); break;
+    case "multi": s = d.options.map((o, i) => (d.correct.includes(i) ? "✓ " : "") + escapeHtml(o)).join(" &nbsp;|&nbsp; "); break;
+    case "blank": s = escapeHtml(d.text) + (d.extra && d.extra.length ? " &nbsp;+ " + d.extra.map(escapeHtml).join(", ") : ""); break;
+    case "tap": s = escapeHtml(d.text); break;
+    case "unscramble": s = escapeHtml(d.word); break;
+    case "number": s = d.mode === "line" ? "line " + d.min + " to " + d.max + ": " + d.answers[0] + " ±" + d.tolerance : d.answers.join(" or ") + (d.tolerance ? " ±" + d.tolerance : ""); break;
+  }
+  return "<span class='chip watch'>" + kind + "</span> " + s;
+}
+
 function renderAnswerInputs(count, type) {
   const el = document.getElementById("q-answers");
+  if (RICH_TYPES.includes(type)) { renderRichInputs(type); return; }
   el.innerHTML = "";
   const n = type === "tf" ? 2 : count;
   const labels = type === "tf" ? ["True", "False"] : null;
@@ -1002,7 +1132,7 @@ async function openSet(id) {
     const row = document.createElement("div");
     row.className = "question-row";
     row.innerHTML = `<div class="prompt">${escapeHtml(q.prompt)}</div>
-      <div class="meta">${q.answers.map((a, i) => (i === q.correct_index ? "✓ " : "") + escapeHtml(a)).join(" &nbsp;|&nbsp; ")}</div>`;
+      <div class="meta">${questionSummary(q)}</div>`;
     const btnRow = document.createElement("div");
     btnRow.className = "row";
     btnRow.style.marginTop = "8px";
@@ -1051,13 +1181,18 @@ function loadQuestionIntoForm(q) {
   document.getElementById("q-explanation").value = q.explanation || "";
   document.getElementById("q-difficulty").value = String(q.difficulty || 1);
   document.getElementById("q-topic").value = q.topic || "";
-  renderAnswerInputs(q.answers.length, q.question_type);
-  q.answers.forEach((a, i) => {
-    const input = document.getElementById("answer-" + i);
-    if (input) input.value = a;
-  });
-  const radio = document.getElementById("correct-" + q.correct_index);
-  if (radio) radio.checked = true;
+  if (q.data) {
+    renderAnswerInputs(0, q.question_type);
+    fillRich(q.question_type, q.data);
+  } else {
+    renderAnswerInputs(q.answers.length, q.question_type);
+    q.answers.forEach((a, i) => {
+      const input = document.getElementById("answer-" + i);
+      if (input) input.value = a;
+    });
+    const radio = document.getElementById("correct-" + q.correct_index);
+    if (radio) radio.checked = true;
+  }
   window.scrollTo(0, document.body.scrollHeight);
 }
 
@@ -1067,25 +1202,25 @@ document.getElementById("btn-save-question").onclick = async () => {
   setError("question-error", "");
   const type = document.getElementById("q-type").value;
   const prompt = document.getElementById("q-prompt").value.trim();
-  const n = type === "tf" ? 2 : 4;
-  const answers = [];
-  for (let i = 0; i < n; i++) answers.push(document.getElementById("answer-" + i).value.trim());
-  const correctRadio = document.querySelector('input[name="correct"]:checked');
-
+  let body;
   if (!prompt) return setError("question-error", "Enter a prompt");
-  if (answers.some(a => !a)) return setError("question-error", "Fill in all answers");
-  if (!correctRadio) return setError("question-error", "Pick the correct answer");
-
-  const body = {
-    question_type: type,
-    prompt,
-    answers,
-    correct_index: Number(correctRadio.value),
-    explanation: document.getElementById("q-explanation").value.trim(),
-    difficulty: Number(document.getElementById("q-difficulty").value),
-    topic: document.getElementById("q-topic").value.trim(),
-    tags: [],
-  };
+  if (RICH_TYPES.includes(type)) {
+    const data = collectRich(type);
+    if (type === "sort" && data.items.some(p => p[1] === -1)) return setError("question-error", "Every item must end in = and one of your category names");
+    body = { question_type: type, prompt, data };
+  } else {
+    const n = type === "tf" ? 2 : 4;
+    const answers = [];
+    for (let i = 0; i < n; i++) answers.push(document.getElementById("answer-" + i).value.trim());
+    const correctRadio = document.querySelector('input[name="correct"]:checked');
+    if (answers.some(a => !a)) return setError("question-error", "Fill in all answers");
+    if (!correctRadio) return setError("question-error", "Pick the correct answer");
+    body = { question_type: type, prompt, answers, correct_index: Number(correctRadio.value) };
+  }
+  body.explanation = document.getElementById("q-explanation").value.trim();
+  body.difficulty = Number(document.getElementById("q-difficulty").value);
+  body.topic = document.getElementById("q-topic").value.trim();
+  body.tags = [];
 
   try {
     if (editingQuestionId) {
